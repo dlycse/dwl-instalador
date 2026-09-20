@@ -84,7 +84,7 @@ info "Instalando dependencias base..."
 sudo xbps-install -Sy \
     base-devel libX11-devel libXft-devel libXinerama-devel \
     freetype-devel fontconfig-devel xorg xinit curl wget \
-    dmenu st slock dunst picom feh \
+    dmenu st slock dunst fastfetch picom feh \
     alsa-utils brightnessctl scrot \
     nerd-fonts \
     lightdm lightdm-gtk3-greeter \
