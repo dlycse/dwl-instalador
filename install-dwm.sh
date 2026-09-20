@@ -93,7 +93,6 @@ sudo xbps-install -Sy \
 
 info "Habilitando servicios (dbus, lightdm)..."
 [ -L /var/service/dbus ]    || sudo ln -s /etc/sv/dbus /var/service/
-[ -L /var/service/lightdm ] || sudo ln -s /etc/sv/lightdm /var/service/
 [ -L /var/service/chronyd ] || sudo ln -s /etc/sv/chronyd /var/service/
 # ----------------------------------------------------------------
 # 2b. Zona horaria y reloj
@@ -439,6 +438,6 @@ Type=Application
 EOF
 
 # terminando la configuracion
-
+[ -L /var/service/lightdm ] || sudo ln -s /etc/sv/lightdm /var/service/
 info "¡Instalación lista!"
 warn "Si no ves la sesión de DWM en el login, asegúrate de que /usr/local/bin/ esté en tu PATH"
