@@ -32,6 +32,7 @@ Ahora, inicia el proceso de instalación:
 
 sudo ./install-dwm.sh
 
+normalmente debes reiniciar antes de intentar iniciar sesión em dwm ya que falla si lo intentas sin reiniciar
 ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 <img width="2880" height="2160" alt="image" src="https://github.com/user-attachments/assets/38596f5c-47f1-4bc8-b0ff-03b279963d24" />
