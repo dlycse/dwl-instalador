@@ -83,17 +83,108 @@ WALLPAPER_URL="https://wallpapercave.com/download/empty-error-wallpapers-wp83307
 info "Instalando dependencias base..."
 sudo xbps-install -Sy \
     base-devel libX11-devel libXft-devel libXinerama-devel \
-    freetype-devel fontconfig-devel xorg xinit git curl wget \
+    freetype-devel fontconfig-devel xorg xinit curl wget \
     dmenu st slock dunst picom feh \
     alsa-utils brightnessctl scrot \
     nerd-fonts \
     lightdm lightdm-gtk3-greeter \
+    chrony firefox \
     dbus
 
 info "Habilitando servicios (dbus, lightdm)..."
 [ -L /var/service/dbus ]    || sudo ln -s /etc/sv/dbus /var/service/
 [ -L /var/service/lightdm ] || sudo ln -s /etc/sv/lightdm /var/service/
+[ -L /var/service/chronyd ] || sudo ln -s /etc/sv/chronyd /var/service/
+# ----------------------------------------------------------------
+# 2b. Zona horaria y reloj
+# ----------------------------------------------------------------
+info "Configuracion de zona horaria."
+printf "Escribe tu pais (ej: Colombia, Mexico, Argentina, España).\nDeja vacio para usar Colombia por defecto: "
+read -r PAIS_INPUT
+PAIS_INPUT="${PAIS_INPUT:-Colombia}"
 
+# Normalizar: minusculas y sin tildes, para que "México", "mexico", "MEXICO" den igual
+PAIS_NORM=$(printf '%s' "$PAIS_INPUT" | tr '[:upper:]' '[:lower:]' | \
+    sed 's/á/a/g; s/é/e/g; s/í/i/g; s/ó/o/g; s/ú/u/g; s/ñ/n/g')
+
+case "$PAIS_NORM" in
+    colombia)                          TZ_INPUT="America/Bogota" ;;
+    mexico)                            TZ_INPUT="America/Mexico_City" ;;
+    argentina)                         TZ_INPUT="America/Argentina/Buenos_Aires" ;;
+    chile)                             TZ_INPUT="America/Santiago" ;;
+    peru)                              TZ_INPUT="America/Lima" ;;
+    ecuador)                           TZ_INPUT="America/Guayaquil" ;;
+    venezuela)                         TZ_INPUT="America/Caracas" ;;
+    bolivia)                           TZ_INPUT="America/La_Paz" ;;
+    paraguay)                          TZ_INPUT="America/Asuncion" ;;
+    uruguay)                           TZ_INPUT="America/Montevideo" ;;
+    panama)                            TZ_INPUT="America/Panama" ;;
+    "costa rica")                      TZ_INPUT="America/Costa_Rica" ;;
+    guatemala)                         TZ_INPUT="America/Guatemala" ;;
+    honduras)                          TZ_INPUT="America/Tegucigalpa" ;;
+    "el salvador")                     TZ_INPUT="America/El_Salvador" ;;
+    nicaragua)                         TZ_INPUT="America/Managua" ;;
+    "republica dominicana")            TZ_INPUT="America/Santo_Domingo" ;;
+    cuba)                              TZ_INPUT="America/Havana" ;;
+    "puerto rico")                     TZ_INPUT="America/Puerto_Rico" ;;
+    brasil|brazil)                     TZ_INPUT="America/Sao_Paulo" ;;
+    "estados unidos"|usa|eeuu)         TZ_INPUT="America/New_York" ;;
+    canada)                            TZ_INPUT="America/Toronto" ;;
+    españa|spain)                      TZ_INPUT="Europe/Madrid" ;;
+    francia|france)                    TZ_INPUT="Europe/Paris" ;;
+    alemania|germany)                  TZ_INPUT="Europe/Berlin" ;;
+    italia|italy)                      TZ_INPUT="Europe/Rome" ;;
+    "reino unido"|uk|"united kingdom") TZ_INPUT="Europe/London" ;;
+    /)
+        # El usuario ya escribio formato Region/Ciudad directamente (ej. America/Denver)
+        TZ_INPUT="$PAIS_INPUT"
+        ;;
+    *)
+        TZ_INPUT=""
+        ;;
+esac
+
+if [ -n "$TZ_INPUT" ] && [ -f "/usr/share/zoneinfo/$TZ_INPUT" ]; then
+    info "Pais: $PAIS_INPUT -> Zona horaria: $TZ_INPUT"
+    sudo ln -sf "/usr/share/zoneinfo/$TZ_INPUT" /etc/localtime
+    sudo hwclock --systohc
+else
+    warn "No reconoci '$PAIS_INPUT' como pais, y tampoco es una ruta valida de zona horaria."
+    warn "Se deja la zona horaria del sistema sin cambios. Puedes revisar opciones con:"
+    warn "  find /usr/share/zoneinfo -type f | sed 's#/usr/share/zoneinfo/##' | less"
+    warn "y luego corregirla a mano con: sudo ln -sf /usr/share/zoneinfo/Region/Ciudad /etc/localtime"
+fi
+# ----------------------------------------------------------------
+# 2c. Teclado (segun el pais elegido arriba)
+# ----------------------------------------------------------------
+if [ -n "$KB_LAYOUT" ]; then
+    printf "Deseas cambiar la configuracion de teclado a la predeterminada de %s (layout '%s')? [S/n]: " "$PAIS_INPUT" "$KB_LAYOUT"
+    read -r CAMBIAR_TECLADO
+    case "$CAMBIAR_TECLADO" in
+        n|N|no|No|NO)
+            info "Se deja el layout de teclado actual sin cambios."
+            ;;
+        *)
+            info "Configurando teclado en '$KB_LAYOUT'..."
+
+            # Aplicar de inmediato a la sesion X actual (si hay una corriendo)
+            command -v setxkbmap >/dev/null 2>&1 && setxkbmap "$KB_LAYOUT" 2>/dev/null || true
+
+            # Dejarlo fijo para Xorg (aplica tambien en la pantalla de login de lightdm)
+            sudo mkdir -p /etc/X11/xorg.conf.d
+            sudo tee /etc/X11/xorg.conf.d/00-keyboard.conf >/dev/null <<EOF
+Section "InputClass"
+        Identifier "system-keyboard"
+        MatchIsKeyboard "on"
+        Option "XkbLayout" "$KB_LAYOUT"
+EndSection
+EOF
+            ;;
+    esac
+else
+    warn "No hay layout de teclado asociado a '$PAIS_INPUT'. Puedes configurarlo a mano despues con:"
+    warn "  setxkbmap TU_LAYOUT   (ej: setxkbmap latam, setxkbmap us, setxkbmap es)"
+fi
 # ----------------------------------------------------------------
 # 3. Clonar y compilar dwm
 # ----------------------------------------------------------------
