@@ -68,8 +68,8 @@ DWM_REPO="https://git.suckless.org/dwm"
 SLSTATUS_REPO="https://git.suckless.org/slstatus"
 VANITYGAPS_URL="https://dwm.suckless.org/patches/vanitygaps/dwm-vanitygaps-6.2.diff"
 
-WIFI_IFACE="wlo1"
-BAT_NAME="BAT0"
+# (FIX: ya NO se sobreescriben WIFI_IFACE / BAT_NAME aqui;
+#  se respeta lo detectado automaticamente arriba)
 
 WALLPAPER_DIR="$HOME/Pictures"
 WALLPAPER_PATH="$WALLPAPER_DIR/wallpaper.jpg"
@@ -90,7 +90,8 @@ sudo xbps-install -Sy \
     freetype-devel fontconfig-devel xorg xinit git curl \
     dmenu st slock dunst picom feh \
     alsa-utils brightnessctl scrot \
-    nerd-fonts-ttf \
+    nerd-fonts \
+    lightdm lightdm-gtk3-greeter \
     dbus
 
 info "Habilitando servicios (dbus, lightdm)..."
@@ -106,6 +107,12 @@ if [ ! -d dwm ]; then
     git clone "$DWM_REPO"
 fi
 cd dwm
+
+# FIX: el parche vanitygaps es para dwm 6.2, pero HEAD del repo esta
+# en 6.8+. Nos fijamos en el tag 6.2 para que el patch aplique limpio.
+info "Fijando dwm en el tag 6.2 (version compatible con el parche vanitygaps)..."
+git fetch --tags
+git checkout tags/6.2 -b v6.2-local 2>/dev/null || git checkout v6.2-local
 
 info "Escribiendo config.h de dwm..."
 cat > config.h <<'EOF'
@@ -244,23 +251,13 @@ info "Descargando parche vanitygaps..."
 [ -f dwm-vanitygaps-6.2.diff ] || curl -sO "$VANITYGAPS_URL"
 
 if [ ! -f vanitygaps.c ]; then
-    info "Aplicando parche vanitygaps a dwm.c (con fuzz, puede necesitar retoques si dwm.c cambia de version)..."
-    patch -p1 -N --fuzz=3 < dwm-vanitygaps-6.2.diff || warn "El parche no aplico 100% limpio. Revisa dwm.c.rej si existe."
-    # Elimina declaracion/implementacion duplicada de tile() que trae dwm base
-    sed -i '/^static void tile(Monitor \*);$/d' dwm.c
-    sed -i '/^static void tile(Monitor \*m);$/d' dwm.c
-    awk '
-        /^tile\(Monitor \*m\)$/ { intile=1; buf="void\n"; next }
-        intile && /^\{$/ { depth=1; buf=buf"{\n"; next }
-        intile && depth>0 {
-            buf=buf $0 "\n"
-            n=gsub(/\{/,"{"); depth+=n
-            n=gsub(/\}/,"}"); depth-=n
-            if (depth==0) { intile=0; buf=""; next }
-            next
-        }
-        { print }
-    ' dwm.c > dwm.c.tmp && mv dwm.c.tmp dwm.c
+    info "Aplicando parche vanitygaps a dwm.c..."
+    if ! patch -p1 -N --fuzz=3 < dwm-vanitygaps-6.2.diff; then
+        error "El parche no aplicó. Aunque ahora estamos en el tag 6.2 (la version"
+        error "para la que se hizo el parche), algo mas fallo. Revisa dwm.c.rej si existe"
+        error "y avisame para depurarlo antes de seguir."
+        exit 1
+    fi
 fi
 
 info "Compilando dwm..."
@@ -353,5 +350,5 @@ EOF
 
 # terminando la configuracion
 
-info "¡Instalación lista!"
+info "¡Instalación lista! recuerda poner los wallpapers en pictures"
 warn "Si no ves la sesión de DWM en el login, asegúrate de que /usr/local/bin/ esté en tu PATH"
