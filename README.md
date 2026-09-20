@@ -1,6 +1,6 @@
-######POR EL MOMENTO SCRIPT NO FUNCIONAL######
-
 SOLO PARA VOID LINUX, MAS ADELANTE DISPONIBLE PARA LAS DIFERENTES DISTRIBUCIONES
+RECUERDA INSTALAR GIT con el siguiente comando
+sudo xbps-install -S git
 
 1. Clonar el repositorio
 Copia y pega este comando en tu terminal para descargar todo el código a tu máquina:
@@ -27,3 +27,5 @@ Ahora, inicia el proceso de instalación:
 
 
 sudo ./install-dwm.sh
+
+||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
