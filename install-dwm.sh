@@ -319,7 +319,7 @@ sudo tee /usr/local/bin/dwm-session >/dev/null <<EOF
 #!/bin/sh
 # Comandos de inicio
 feh --bg-fill "$WALLPAPER_PATH" &
-picom &
+picom --config "$HOME/.config/picom/picom.conf" &
 slstatus &
 
 # Ejecutar dwm (siempre al final con exec)
