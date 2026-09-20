@@ -74,12 +74,8 @@ VANITYGAPS_URL="https://dwm.suckless.org/patches/vanitygaps/dwm-vanitygaps-6.2.d
 WALLPAPER_DIR="$HOME/Pictures"
 WALLPAPER_PATH="$WALLPAPER_DIR/wallpaper.jpg"
 
-# Wallpaper por defecto segun distro (pon aqui tus propias URLs si quieres)
-case "$DISTRO_ID" in
-    void)  WALLPAPER_URL="" ;;
-    arch)  WALLPAPER_URL="" ;;
-    *)     WALLPAPER_URL="" ;;
-esac
+# Wallpaper fijo (Empty Error - wallpapercave)
+WALLPAPER_URL="https://wallpapercave.com/download/empty-error-wallpapers-wp8330753"
 
 # ----------------------------------------------------------------
 # 2. Paquetes necesarios
@@ -87,7 +83,7 @@ esac
 info "Instalando dependencias base..."
 sudo xbps-install -Sy \
     base-devel libX11-devel libXft-devel libXinerama-devel \
-    freetype-devel fontconfig-devel xorg xinit git curl \
+    freetype-devel fontconfig-devel xorg xinit git curl wget \
     dmenu st slock dunst picom feh \
     alsa-utils brightnessctl scrot \
     nerd-fonts \
@@ -311,12 +307,9 @@ EOF
 # 6. Wallpaper
 # ----------------------------------------------------------------
 mkdir -p "$WALLPAPER_DIR"
-if [ -n "$WALLPAPER_URL" ] && [ ! -f "$WALLPAPER_PATH" ]; then
-    info "Descargando wallpaper para $DISTRO_ID..."
-    curl -sL -o "$WALLPAPER_PATH" "$WALLPAPER_URL" || warn "No se pudo descargar el wallpaper."
-elif [ ! -f "$WALLPAPER_PATH" ]; then
-    warn "No hay WALLPAPER_URL configurada para '$DISTRO_ID' y no existe $WALLPAPER_PATH."
-    warn "Copia tu imagen manualmente a: $WALLPAPER_PATH"
+if [ ! -f "$WALLPAPER_PATH" ]; then
+    info "Descargando wallpaper..."
+    wget -q -O "$WALLPAPER_PATH" "$WALLPAPER_URL" || warn "No se pudo descargar el wallpaper."
 fi
 # ----------------------------------------------------------------
 # 7. Crear script Wrapper (Para que LightDM inicie todo)
@@ -336,6 +329,12 @@ EOF
 sudo chmod +x /usr/local/bin/dwm-session
 
 # ----------------------------------------------------------------
+# 7b. Crear ~/.xinitrc (para poder usar "startx" ademas de lightdm)
+# ----------------------------------------------------------------
+info "Creando ~/.xinitrc para que 'startx' use dwm en vez del xinitrc generico..."
+echo "exec /usr/local/bin/dwm-session" > "$HOME/.xinitrc"
+
+# ----------------------------------------------------------------
 # 8. Registrar sesion dwm en lightdm
 # ----------------------------------------------------------------
 info "Registrando sesion dwm en lightdm..."
@@ -350,5 +349,5 @@ EOF
 
 # terminando la configuracion
 
-info "¡Instalación lista! recuerda poner los wallpapers en pictures"
+info "¡Instalación lista!"
 warn "Si no ves la sesión de DWM en el login, asegúrate de que /usr/local/bin/ esté en tu PATH"
