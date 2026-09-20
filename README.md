@@ -1,6 +1,7 @@
 SOLO PARA VOID LINUX, MAS ADELANTE DISPONIBLE PARA LAS DIFERENTES DISTRIBUCIONES
 
 RECUERDA INSTALAR GIT con el siguiente comando
+
 sudo xbps-install -S git
 
 1. Clonar el repositorio
