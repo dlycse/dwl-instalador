@@ -30,7 +30,7 @@ chmod +x install-dwm.sh
 Ahora, inicia el proceso de instalación:
 
 
-sudo ./install-dwm.sh
+./install-dwm.sh
 
 normalmente debes reiniciar antes de intentar iniciar sesión en dwm ya que falla si lo intentas sin reiniciar
 ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
