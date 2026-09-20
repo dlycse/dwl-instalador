@@ -1,7 +1,8 @@
 #!/bin/sh
 # install-dwm.sh
-# Instalador rápido de dwm + rice personalizado (Void Linux)
-# Uso: sh install-dwm.sh
+# Instalador rapido de dwm + rice personalizado (Void Linux)
+# Uso: sh install-dwm.sh   (como usuario normal, NO como root)
+# Revisar sintaxis sin ejecutar: sh -n install-dwm.sh
 
 set -e
 
@@ -18,7 +19,21 @@ warn()  { printf "%b[!]%b %s\n" "$YELLOW" "$RESET" "$1"; }
 error() { printf "%b[x]%b %s\n" "$RED" "$RESET" "$1"; }
 
 # ----------------------------------------------------------------
-# 0. Detectar distro (para elegir wallpaper / avisar si no es Void)
+# Comprobaciones previas
+# ----------------------------------------------------------------
+if [ "$(id -u)" -eq 0 ]; then
+    error "No ejecutes este script como root: los archivos quedarian en /root."
+    error "Usa tu usuario normal (el script usa sudo cuando lo necesita)."
+    exit 1
+fi
+
+if ! command -v sudo >/dev/null 2>&1; then
+    error "Falta 'sudo'. Instalalo y agrega tu usuario a sudoers (visudo) antes de continuar."
+    exit 1
+fi
+
+# ----------------------------------------------------------------
+# 0. Detectar distro (para avisar si no es Void)
 # ----------------------------------------------------------------
 DISTRO_ID="unknown"
 if [ -f /etc/os-release ]; then
@@ -40,26 +55,26 @@ if [ "$DISTRO_ID" != "void" ]; then
 fi
 
 # ----------------------------------------------------------------
-# Auto-detección de hardware
+# Auto-deteccion de hardware
 # ----------------------------------------------------------------
 info "Detectando hardware..."
 
-# Detectar interfaz de red por defecto
-WIFI_IFACE=$(ip route | grep default | awk '{print $5}' | head -n1)
+# Interfaz de red por defecto
+WIFI_IFACE=$(ip route | grep default | awk '{print $5}' | head -n1 || true)
 if [ -z "$WIFI_IFACE" ]; then
     warn "No se pudo detectar interfaz de red activa, usando 'eth0' por defecto."
     WIFI_IFACE="eth0"
 fi
 
-# Detectar nombre de la batería
-BAT_NAME=$(ls /sys/class/power_supply/ | grep -E '^BAT' | head -n1)
+# Nombre de la bateria
+BAT_NAME=$(ls /sys/class/power_supply/ 2>/dev/null | grep -E '^BAT' | head -n1 || true)
 if [ -z "$BAT_NAME" ]; then
-    warn "No se detectó batería, configurando en n/a."
+    warn "No se detecto bateria; no se mostrara en la barra."
     BAT_NAME="n/a"
 fi
 
 info "Interfaz de red: $WIFI_IFACE"
-info "Batería: $BAT_NAME"
+info "Bateria: $BAT_NAME"
 
 # ----------------------------------------------------------------
 # 1. Variables de configuracion (edita a tu gusto)
@@ -68,21 +83,21 @@ DWM_REPO="https://git.suckless.org/dwm"
 SLSTATUS_REPO="https://git.suckless.org/slstatus"
 VANITYGAPS_URL="https://dwm.suckless.org/patches/vanitygaps/dwm-vanitygaps-6.2.diff"
 
-# (FIX: ya NO se sobreescriben WIFI_IFACE / BAT_NAME aqui;
-#  se respeta lo detectado automaticamente arriba)
-
 WALLPAPER_DIR="$HOME/Pictures"
 WALLPAPER_PATH="$WALLPAPER_DIR/wallpaper.jpg"
 
-# Wallpaper fijo (Empty Error - wallpapercave)
+# Wallpaper fijo (Empty Error - wallpapercave).
+# Si esta URL no devuelve una imagen, se omite; lo ideal es una URL directa a un .jpg
 WALLPAPER_URL="https://wallpapercave.com/download/empty-error-wallpapers-wp8330753"
 
 # ----------------------------------------------------------------
 # 2. Paquetes necesarios
 # ----------------------------------------------------------------
+# Nota: 'xorg' y 'nerd-fonts' son metapaquetes muy pesados. Si quieres algo mas
+# ligero, revisa xorg-minimal y una sola fuente (xbps-query -Rs nerd-fonts).
 info "Instalando dependencias base..."
 sudo xbps-install -Sy \
-    base-devel libX11-devel libXft-devel libXinerama-devel \
+    base-devel git file libX11-devel libXft-devel libXinerama-devel \
     freetype-devel fontconfig-devel xorg xinit curl wget \
     dmenu st slock dunst fastfetch picom feh \
     alsa-utils brightnessctl scrot \
@@ -91,9 +106,10 @@ sudo xbps-install -Sy \
     chrony firefox \
     dbus
 
-info "Habilitando servicios (dbus, lightdm)..."
+info "Habilitando servicios (dbus, chronyd)..."
 [ -L /var/service/dbus ]    || sudo ln -s /etc/sv/dbus /var/service/
 [ -L /var/service/chronyd ] || sudo ln -s /etc/sv/chronyd /var/service/
+
 # ----------------------------------------------------------------
 # 2b. Zona horaria y reloj
 # ----------------------------------------------------------------
@@ -102,9 +118,11 @@ printf "Escribe tu pais (ej: Colombia, Mexico, Argentina, España).\nDeja vacio 
 read -r PAIS_INPUT
 PAIS_INPUT="${PAIS_INPUT:-Colombia}"
 
-# Normalizar: minusculas y sin tildes, para que "México", "mexico", "MEXICO" den igual
+# Normalizar: minusculas y sin tildes
 PAIS_NORM=$(printf '%s' "$PAIS_INPUT" | tr '[:upper:]' '[:lower:]' | \
     sed 's/á/a/g; s/é/e/g; s/í/i/g; s/ó/o/g; s/ú/u/g; s/ñ/n/g')
+
+TZ_INPUT=""
 
 case "$PAIS_NORM" in
     colombia)                          TZ_INPUT="America/Bogota" ;;
@@ -129,13 +147,13 @@ case "$PAIS_NORM" in
     brasil|brazil)                     TZ_INPUT="America/Sao_Paulo" ;;
     "estados unidos"|usa|eeuu)         TZ_INPUT="America/New_York" ;;
     canada)                            TZ_INPUT="America/Toronto" ;;
-    españa|spain)                      TZ_INPUT="Europe/Madrid" ;;
+    espana|spain)                      TZ_INPUT="Europe/Madrid" ;;
     francia|france)                    TZ_INPUT="Europe/Paris" ;;
     alemania|germany)                  TZ_INPUT="Europe/Berlin" ;;
     italia|italy)                      TZ_INPUT="Europe/Rome" ;;
     "reino unido"|uk|"united kingdom") TZ_INPUT="Europe/London" ;;
-    /)
-        # El usuario ya escribio formato Region/Ciudad directamente (ej. America/Denver)
+    */*)
+        # El usuario escribio Region/Ciudad directamente (ej. America/Denver)
         TZ_INPUT="$PAIS_INPUT"
         ;;
     *)
@@ -146,44 +164,20 @@ esac
 if [ -n "$TZ_INPUT" ] && [ -f "/usr/share/zoneinfo/$TZ_INPUT" ]; then
     info "Pais: $PAIS_INPUT -> Zona horaria: $TZ_INPUT"
     sudo ln -sf "/usr/share/zoneinfo/$TZ_INPUT" /etc/localtime
-    sudo hwclock --systohc
+    sudo hwclock --systohc || warn "No se pudo sincronizar el reloj de hardware (se ignora)."
+    # En Void, TIMEZONE en /etc/rc.conf sobrescribe /etc/localtime en cada arranque
+    if grep -qE '^[#[:space:]]*TIMEZONE=' /etc/rc.conf 2>/dev/null; then
+        sudo sed -i "s|^[#[:space:]]*TIMEZONE=.*|TIMEZONE=\"$TZ_INPUT\"|" /etc/rc.conf
+    else
+        printf 'TIMEZONE="%s"\n' "$TZ_INPUT" | sudo tee -a /etc/rc.conf >/dev/null
+    fi
 else
     warn "No reconoci '$PAIS_INPUT' como pais, y tampoco es una ruta valida de zona horaria."
     warn "Se deja la zona horaria del sistema sin cambios. Puedes revisar opciones con:"
     warn "  find /usr/share/zoneinfo -type f | sed 's#/usr/share/zoneinfo/##' | less"
     warn "y luego corregirla a mano con: sudo ln -sf /usr/share/zoneinfo/Region/Ciudad /etc/localtime"
 fi
-# ----------------------------------------------------------------
-# 2c. Teclado (segun el pais elegido arriba)
-# ----------------------------------------------------------------
-if [ -n "$KB_LAYOUT" ]; then
-    printf "Deseas cambiar la configuracion de teclado a la predeterminada de %s (layout '%s')? [S/n]: " "$PAIS_INPUT" "$KB_LAYOUT"
-    read -r CAMBIAR_TECLADO
-    case "$CAMBIAR_TECLADO" in
-        n|N|no|No|NO)
-            info "Se deja el layout de teclado actual sin cambios."
-            ;;
-        *)
-            info "Configurando teclado en '$KB_LAYOUT'..."
 
-            # Aplicar de inmediato a la sesion X actual (si hay una corriendo)
-            command -v setxkbmap >/dev/null 2>&1 && setxkbmap "$KB_LAYOUT" 2>/dev/null || true
-
-            # Dejarlo fijo para Xorg (aplica tambien en la pantalla de login de lightdm)
-            sudo mkdir -p /etc/X11/xorg.conf.d
-            sudo tee /etc/X11/xorg.conf.d/00-keyboard.conf >/dev/null <<EOF
-Section "InputClass"
-        Identifier "system-keyboard"
-        MatchIsKeyboard "on"
-        Option "XkbLayout" "$KB_LAYOUT"
-EndSection
-EOF
-            ;;
-    esac
-else
-    warn "No hay layout de teclado asociado a '$PAIS_INPUT'. Puedes configurarlo a mano despues con:"
-    warn "  setxkbmap TU_LAYOUT   (ej: setxkbmap latam, setxkbmap us, setxkbmap es)"
-fi
 # ----------------------------------------------------------------
 # 3. Clonar y compilar dwm
 # ----------------------------------------------------------------
@@ -194,8 +188,8 @@ if [ ! -d dwm ]; then
 fi
 cd dwm
 
-# FIX: el parche vanitygaps es para dwm 6.2, pero HEAD del repo esta
-# en 6.8+. Nos fijamos en el tag 6.2 para que el patch aplique limpio.
+# El parche vanitygaps es para dwm 6.2, pero HEAD del repo esta en 6.8+.
+# Nos fijamos en el tag 6.2 para que el patch aplique limpio.
 info "Fijando dwm en el tag 6.2 (version compatible con el parche vanitygaps)..."
 git fetch --tags
 git checkout tags/6.2 -b v6.2-local 2>/dev/null || git checkout v6.2-local
@@ -239,8 +233,6 @@ static const Rule rules[] = {
 static const float mfact     = 0.50;
 static const int nmaster     = 1;
 static const int resizehints = 1;
-static const int lockfullscreen = 1;
-static const int refreshrate = 120;
 
 #define FORCE_VSPLIT 1
 #include "vanitygaps.c"
@@ -334,14 +326,12 @@ static const Button buttons[] = {
 EOF
 
 info "Descargando parche vanitygaps..."
-[ -f dwm-vanitygaps-6.2.diff ] || curl -sO "$VANITYGAPS_URL"
+[ -f dwm-vanitygaps-6.2.diff ] || curl -fsSO "$VANITYGAPS_URL"
 
 if [ ! -f vanitygaps.c ]; then
     info "Aplicando parche vanitygaps a dwm.c..."
     if ! patch -p1 -N --fuzz=3 < dwm-vanitygaps-6.2.diff; then
-        error "El parche no aplicó. Aunque ahora estamos en el tag 6.2 (la version"
-        error "para la que se hizo el parche), algo mas fallo. Revisa dwm.c.rej si existe"
-        error "y avisame para depurarlo antes de seguir."
+        error "El parche no aplico. Revisa dwm.c.rej si existe y depuralo antes de seguir."
         exit 1
     fi
 fi
@@ -359,19 +349,29 @@ if [ ! -d slstatus ]; then
 fi
 cd slstatus
 
+# Solo se agregan a la barra los modulos que existen en este equipo:
+# wifi si la interfaz es inalambrica, bateria si hay BAT*.
 info "Escribiendo config.h de slstatus..."
-cat > config.h <<EOF
+{
+    cat <<'EOF'
 /* See LICENSE file for copyright and license details. */
 const unsigned int interval = 1000;
 static const char unknown_str[] = "n/a";
 #define MAXLEN 2048
 
 static const struct arg args[] = {
-        { wifi_essid,     "  %s  ",          "$WIFI_IFACE" },
-        { battery_perc,   "BAT: %s%%  ",     "$BAT_NAME" },
-        { datetime,       "%s",              "%Y-%m-%d %I:%M %p" },
+EOF
+    if [ -d "/sys/class/net/$WIFI_IFACE/wireless" ]; then
+        printf '        { wifi_essid,   "  %%s  ",      "%s" },\n' "$WIFI_IFACE"
+    fi
+    if [ "$BAT_NAME" != "n/a" ]; then
+        printf '        { battery_perc, "BAT: %%s%%%%  ", "%s" },\n' "$BAT_NAME"
+    fi
+    cat <<'EOF'
+        { datetime,     "%s",           "%Y-%m-%d %I:%M %p" },
 };
 EOF
+} > config.h
 
 info "Compilando slstatus..."
 sudo make clean install
@@ -399,17 +399,30 @@ EOF
 mkdir -p "$WALLPAPER_DIR"
 if [ ! -f "$WALLPAPER_PATH" ]; then
     info "Descargando wallpaper..."
-    wget -q -O "$WALLPAPER_PATH" "$WALLPAPER_URL" || warn "No se pudo descargar el wallpaper."
+    wget -q -U "Mozilla/5.0" --referer="https://wallpapercave.com/" \
+        -O "$WALLPAPER_PATH" "$WALLPAPER_URL" || true
+    if ! file "$WALLPAPER_PATH" | grep -qi image; then
+        warn "No se pudo descargar un wallpaper valido; se omite."
+        warn "Puedes copiar tu propia imagen a $WALLPAPER_PATH y se usara al iniciar sesion."
+        rm -f "$WALLPAPER_PATH"
+    fi
 fi
+
+# Aplicarlo ya mismo si hay una sesion X corriendo
+if [ -f "$WALLPAPER_PATH" ] && [ -n "$DISPLAY" ] && command -v feh >/dev/null 2>&1; then
+    feh --bg-fill "$WALLPAPER_PATH" || true
+fi
+
 # ----------------------------------------------------------------
-# 7. Crear script Wrapper (Para que LightDM inicie todo)
+# 7. Script wrapper (para que LightDM inicie todo)
 # ----------------------------------------------------------------
 info "Creando script wrapper para la sesion..."
 sudo tee /usr/local/bin/dwm-session >/dev/null <<EOF
 #!/bin/sh
 # Comandos de inicio
-feh --bg-fill "$WALLPAPER_PATH" &
+[ -f "$WALLPAPER_PATH" ] && feh --bg-fill "$WALLPAPER_PATH" &
 picom --config "$HOME/.config/picom/picom.conf" &
+dunst &
 slstatus &
 
 # Ejecutar dwm (siempre al final con exec)
@@ -419,9 +432,13 @@ EOF
 sudo chmod +x /usr/local/bin/dwm-session
 
 # ----------------------------------------------------------------
-# 7b. Crear ~/.xinitrc (para poder usar "startx" ademas de lightdm)
+# 7b. ~/.xinitrc (para poder usar "startx" ademas de lightdm)
 # ----------------------------------------------------------------
-info "Creando ~/.xinitrc para que 'startx' use dwm en vez del xinitrc generico..."
+if [ -f "$HOME/.xinitrc" ]; then
+    info "Respaldando ~/.xinitrc existente en ~/.xinitrc.bak"
+    cp "$HOME/.xinitrc" "$HOME/.xinitrc.bak"
+fi
+info "Creando ~/.xinitrc para que 'startx' use dwm..."
 echo "exec /usr/local/bin/dwm-session" > "$HOME/.xinitrc"
 
 # ----------------------------------------------------------------
@@ -437,7 +454,66 @@ Exec=/usr/local/bin/dwm-session
 Type=Application
 EOF
 
-# terminando la configuracion
+# ----------------------------------------------------------------
+# 9. Teclado (el usuario elige)
+# ----------------------------------------------------------------
+info "Configuracion de teclado."
+KB_LAYOUT=""
+KB_CONSOLA=""
+while true; do
+    printf "Selecciona la distribucion de teclado:\n"
+    printf "  1) Ingles (us)\n"
+    printf "  2) Español de España (es)\n"
+    printf "  3) Latinoamericano (latam)\n"
+    printf "  4) No cambiar\n"
+    printf "Opcion [3]: "
+    read -r OPCION_TECLADO
+    OPCION_TECLADO="${OPCION_TECLADO:-3}"
+
+    case "$OPCION_TECLADO" in
+        1) KB_LAYOUT="us";    KB_CONSOLA="us";         break ;;
+        2) KB_LAYOUT="es";    KB_CONSOLA="es";         break ;;
+        3) KB_LAYOUT="latam"; KB_CONSOLA="la-latin1";  break ;;
+        4) KB_LAYOUT="";      KB_CONSOLA="";           break ;;
+        *) warn "Opcion no valida, elige 1, 2, 3 o 4." ;;
+    esac
+done
+
+if [ -n "$KB_LAYOUT" ]; then
+    info "Configurando teclado en '$KB_LAYOUT'..."
+
+    # Aplicar de inmediato a la sesion X actual (si hay una corriendo)
+    command -v setxkbmap >/dev/null 2>&1 && setxkbmap "$KB_LAYOUT" 2>/dev/null || true
+
+    # Dejarlo fijo para Xorg (aplica tambien en la pantalla de login de lightdm)
+    sudo mkdir -p /etc/X11/xorg.conf.d
+    sudo tee /etc/X11/xorg.conf.d/00-keyboard.conf >/dev/null <<EOF
+Section "InputClass"
+        Identifier "system-keyboard"
+        MatchIsKeyboard "on"
+        Option "XkbLayout" "$KB_LAYOUT"
+EndSection
+EOF
+
+    # Consola (TTY) en Void: /etc/rc.conf (KEYMAP) + aplicar ahora con loadkeys
+    if [ -n "$KB_CONSOLA" ]; then
+        if grep -qE '^[#[:space:]]*KEYMAP=' /etc/rc.conf 2>/dev/null; then
+            sudo sed -i "s|^[#[:space:]]*KEYMAP=.*|KEYMAP=\"$KB_CONSOLA\"|" /etc/rc.conf
+        else
+            printf 'KEYMAP="%s"\n' "$KB_CONSOLA" | sudo tee -a /etc/rc.conf >/dev/null
+        fi
+        # Solo funciona en una TTY; si falla, se ignora
+        command -v loadkeys >/dev/null 2>&1 && sudo loadkeys "$KB_CONSOLA" 2>/dev/null || true
+    fi
+else
+    info "Se deja el layout de teclado actual sin cambios."
+fi
+
+# ----------------------------------------------------------------
+# 10. Habilitar lightdm y terminar
+# ----------------------------------------------------------------
 [ -L /var/service/lightdm ] || sudo ln -s /etc/sv/lightdm /var/service/
+
 info "¡Instalación lista!"
+warn "Reinicia el equipo (o cierra sesion) para aplicar teclado, zona horaria y lightdm."
 warn "Si no ves la sesión de DWM en el login, asegúrate de que /usr/local/bin/ esté en tu PATH"
