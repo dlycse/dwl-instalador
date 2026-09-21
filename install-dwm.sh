@@ -120,7 +120,7 @@ sudo xbps-install -Sy \
     freetype-devel fontconfig-devel xorg xinit curl wget \
     dmenu st slock dunst fastfetch picom feh \
     alsa-utils brightnessctl scrot \
-    nerd-fonts \
+    nerd-fonts librsvg-utils ImageMagick ffmpeg glib xdg-utils udisks2 xclip tar unzip zip 7zip \
     lightdm lightdm-gtk3-greeter \
     chrony firefox btop cowsay \
     dbus
