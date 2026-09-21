@@ -36,7 +36,7 @@ Se recomienda reiniciar si instalaste un kernel nuevo, si no instalaste kernel n
 
 para editar los atajos de teclado, ingresar a /home/USUARIO/dwm y dentro editar config.h, hacer un sudo make clean install y por ultimo un super+shift+e para cerrar la sesion y volver a iniciarlo
 
-como navegador de archivos tenemos lf, es un navegador de archivos por terminal (solo pones lf en la terminal) 
+como navegador de archivos tenemos lf, es un navegador de archivos por terminal (solo pones lf en la terminal. super+e)  
 https://github.com/gokcehan/lf
 
 deje un Atajos.md en la carpeta dwm-instalador para que vean los atajos predeterminados 
