@@ -8,6 +8,8 @@ Super+t: terminal st
 
 Super+b: Firefox
 
+Super+r: lf
+
 VENTANAS
 
 Super+q: cerrar ventana
