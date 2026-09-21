@@ -103,7 +103,7 @@ sudo xbps-install -Sy \
     alsa-utils brightnessctl scrot \
     nerd-fonts \
     lightdm lightdm-gtk3-greeter \
-    chrony firefox \
+    chrony firefox btop \
     dbus
 
 info "Habilitando servicios (dbus, chronyd)..."
