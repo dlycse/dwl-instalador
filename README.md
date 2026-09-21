@@ -1,6 +1,6 @@
 VERSION 0.3.5 (BETA) puede contener errores
 
-SOLO PARA VOID LINUX
+SOLO PARA VOID LINUX. Minimo 20gb libres para que no tenga errores de almacenamiento
 
 RECUERDA INSTALAR GIT con el siguiente comando
 
