@@ -1,4 +1,4 @@
-VERSION 0.3 (BETA) puede contener errores
+VERSION 0.3.5 (BETA) puede contener errores
 
 SOLO PARA VOID LINUX
 
@@ -40,6 +40,9 @@ como navegador de archivos tenemos lf, es un navegador de archivos por terminal 
 https://github.com/gokcehan/lf
 
 deje un Atajos.md en la carpeta dwm-instalador para que veas los atajos predeterminados 
+
+puedes cambiar el fondo de pantalla cambiandole el nombre a wallpaper.jpg en /Pictures. (dentro encuentras el wallpaper predeterminado puedes borrarlo o puedes cambiarle el nombre y al nuevo fondo de pantalla le cambias el nombre a wallpaper.jpg)
+
 ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 <img width="2880" height="2160" alt="image" src="https://github.com/user-attachments/assets/38596f5c-47f1-4bc8-b0ff-03b279963d24" />
