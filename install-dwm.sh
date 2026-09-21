@@ -510,10 +510,65 @@ else
 fi
 
 # ----------------------------------------------------------------
-# 10. Habilitar lightdm y terminar
+# 10. Kernel (opcional): instalar la serie de kernel mas nueva
+# ----------------------------------------------------------------
+# En Void cada serie es un paquete: linux6.18, linux6.19, ...
+# El paquete 'linux' apunta a la serie por defecto (estable con DKMS);
+# las mas nuevas se instalan aparte y el kernel actual se conserva.
+KERNEL_NUEVO=""
+CUR_KERNEL="$(uname -r)"
+CUR_SERIES="$(printf '%s' "$CUR_KERNEL" | cut -d. -f1,2)"
+info "Kernel en uso: $CUR_KERNEL"
+
+printf "Quieres instalar la serie de kernel mas nueva de los repos de Void? [s/N]: "
+read -r ACT_KERNEL
+case "$ACT_KERNEL" in
+    s|S|si|Si|SI|y|Y)
+        # Busca las series disponibles y se queda con la de version mas alta
+        NEWEST_KERNEL=$(xbps-query --regex -Rs '^linux[0-9]+\.[0-9]+-[0-9._]+' \
+            | awk '{print $2}' | sed 's/-[0-9][0-9._]*$//' | sort -uV | tail -n1)
+
+        if [ -z "$NEWEST_KERNEL" ]; then
+            warn "No pude consultar las series de kernel disponibles (revisa conexion y repos)."
+        elif [ "$NEWEST_KERNEL" = "linux$CUR_SERIES" ]; then
+            info "Ya usas la serie mas nueva ($NEWEST_KERNEL)."
+        else
+            info "Serie mas nueva disponible: $NEWEST_KERNEL"
+            BOOT_FREE_MB=$(df -Pm /boot | awk 'NR==2 {print $4}')
+            if [ "${BOOT_FREE_MB:-0}" -lt 300 ]; then
+                warn "Poco espacio libre en /boot (${BOOT_FREE_MB} MB); se omite la instalacion del kernel."
+                warn "Libera kernels viejos: 'sudo vkpurge list' y luego 'sudo vkpurge rm <version>'."
+            else
+                warn "Es una serie mas nueva que la predeterminada de Void y puede estar menos probada."
+                warn "Tu kernel actual se conserva en el menu de arranque por si necesitas volver a el."
+                if sudo xbps-install -y "$NEWEST_KERNEL" "$NEWEST_KERNEL-headers"; then
+                    # Recompilar modulos DKMS (nvidia, virtualbox, etc.) para el kernel nuevo
+                    if command -v dkms >/dev/null 2>&1; then
+                        sudo xbps-reconfigure -f "$NEWEST_KERNEL" \
+                            || warn "Fallo la reconfiguracion DKMS de $NEWEST_KERNEL."
+                    fi
+                    KERNEL_NUEVO="$NEWEST_KERNEL"
+                    info "Kernel $NEWEST_KERNEL instalado; se usara despues de reiniciar."
+                else
+                    warn "No se pudo instalar $NEWEST_KERNEL; se deja el kernel actual."
+                fi
+            fi
+        fi
+        ;;
+    *)
+        info "Se deja el kernel actual sin cambios."
+        ;;
+esac
+
+# ----------------------------------------------------------------
+# 11. Habilitar lightdm y terminar
 # ----------------------------------------------------------------
 [ -L /var/service/lightdm ] || sudo ln -s /etc/sv/lightdm /var/service/
 
 info "¡Instalación lista!"
+if [ -n "$KERNEL_NUEVO" ]; then
+    warn "Reinicia para usar $KERNEL_NUEVO y verifica con 'uname -r'."
+    warn "Si el kernel nuevo da problemas, elige el anterior en el menu de arranque."
+fi
 warn "Reinicia el equipo (o cierra sesion) para aplicar teclado, zona horaria y lightdm."
 warn "Si no ves la sesión de DWM en el login, asegúrate de que /usr/local/bin/ esté en tu PATH"
