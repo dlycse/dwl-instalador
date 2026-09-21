@@ -120,7 +120,7 @@ sudo xbps-install -Sy \
     freetype-devel fontconfig-devel xorg xinit curl wget \
     dmenu st slock dunst fastfetch picom feh \
     alsa-utils brightnessctl scrot \
-    nerd-fonts lf \
+    nerd-fonts lf mpv zathura zathura-pdf-poppler \
     lightdm lightdm-gtk3-greeter \
     chrony firefox btop cowsay \
     dbus
@@ -282,6 +282,7 @@ static const Key keys[] = {
         { MODKEY,                       XK_Return,     spawn,          {.v = termcmd } },
         { MODKEY,                       XK_t,          spawn,          {.v = termcmd } },
         { MODKEY,                       XK_b,          spawn,          {.v = browsercmd } },
+        { MODKEY,                       XK_e,          spawn,          SHCMD("st -e lf") },
 
         { MODKEY,                       XK_q,          killclient,     {0} },
         { MODKEY,                       XK_f,          setlayout,      {.v = &layouts[2]} },
@@ -499,7 +500,29 @@ if [ -f "$HOME/.xinitrc" ]; then
 fi
 info "Creando ~/.xinitrc para que 'startx' use dwm..."
 echo "exec /usr/local/bin/dwm-session" > "$HOME/.xinitrc"
+# ----------------------------------------------------------------
+# 7c. Configuracion de lf (abrir texto, imagenes, video, audio y PDF)
+# ----------------------------------------------------------------
+info "Configurando lf..."
+mkdir -p "$HOME/.config/lf"
+write_config "$HOME/.config/lf/lfrc" <<'EOF'
+set ifs "\n"
 
+cmd open ${{
+    case $(file --mime-type -Lb "$f") in
+        text/*|application/json|inode/x-empty)
+            ${EDITOR:-nano} $fx ;;
+        image/*)
+            setsid -f feh --scale-down --auto-zoom $fx >/dev/null 2>&1 ;;
+        video/*|audio/*)
+            setsid -f mpv $fx >/dev/null 2>&1 ;;
+        application/pdf)
+            setsid -f zathura $fx >/dev/null 2>&1 ;;
+        *)
+            for f in $fx; do setsid -f xdg-open "$f" >/dev/null 2>&1; done ;;
+    esac
+}}
+EOF
 # ----------------------------------------------------------------
 # 8. Registrar sesion dwm en lightdm
 # ----------------------------------------------------------------
