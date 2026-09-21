@@ -39,7 +39,7 @@ para editar los atajos de teclado, ingresar a /home/USUARIO/dwm y dentro editar 
 como navegador de archivos tenemos lf, es un navegador de archivos por terminal (solo pones lf en la terminal. super+e)  
 https://github.com/gokcehan/lf
 
-deje un Atajos.md en la carpeta dwm-instalador para que vean los atajos predeterminados 
+deje un Atajos.md en la carpeta dwm-instalador para que veas los atajos predeterminados 
 ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 <img width="2880" height="2160" alt="image" src="https://github.com/user-attachments/assets/38596f5c-47f1-4bc8-b0ff-03b279963d24" />
