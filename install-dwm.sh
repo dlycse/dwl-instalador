@@ -119,7 +119,7 @@ sudo xbps-install -Sy \
     base-devel file libX11-devel libXft-devel libXinerama-devel \
     freetype-devel fontconfig-devel xorg xinit curl wget \
     dmenu st slock dunst fastfetch picom feh \
-    alsa-utils brightnessctl scrot \
+    alsa-utils brightnessctl scrot nano \
     nerd-fonts lf mpv zathura zathura-pdf-poppler \
     lightdm lightdm-gtk3-greeter \
     chrony firefox btop cowsay \
