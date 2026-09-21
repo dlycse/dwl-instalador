@@ -386,7 +386,7 @@ backend = "xrender";
 vsync = false;
 
 opacity-rule = [
-  "90:class_g = 'st-256color'"
+  "70:class_g = 'st-256color'"
 ];
 
 shadow = false;
