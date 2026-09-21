@@ -39,7 +39,7 @@ para editar los atajos de teclado, ingresar a /home/USUARIO/dwm y dentro editar 
 como navegador de archivos tenemos lf, es un navegador de archivos por terminal (solo pones lf en la terminal. super+e)  
 https://github.com/gokcehan/lf
 
-deje un Atajos.md en la carpeta dwm-instalador para que veas los atajos predeterminados 
+deje un Atajos.md en la carpeta dwm-instalador para que veas los atajos predeterminados lo puedes verificar con nano 
 
 puedes cambiar el fondo de pantalla cambiandole el nombre a wallpaper.jpg en /Pictures. (dentro encuentras el wallpaper predeterminado puedes borrarlo o puedes cambiarle el nombre y al nuevo fondo de pantalla le cambias el nombre a wallpaper.jpg)
 
