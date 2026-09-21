@@ -18,6 +18,25 @@ info()  { printf "%b[+]%b %s\n" "$GREEN" "$RESET" "$1"; }
 warn()  { printf "%b[!]%b %s\n" "$YELLOW" "$RESET" "$1"; }
 error() { printf "%b[x]%b %s\n" "$RED" "$RESET" "$1"; }
 
+# Escribe (desde stdin) el archivo $1 solo si no existe. Si ya existe se conserva
+# la version del usuario y la nueva se guarda como "$1.nuevo" para comparar.
+write_config() {
+    if [ -f "$1" ]; then
+        warn "$1 ya existe: se conserva tu version. La nueva quedo en $1.nuevo"
+        cat > "$1.nuevo"
+    else
+        cat > "$1"
+    fi
+}
+
+# Si una ejecucion anterior dejo archivos de root en la carpeta actual, devuelvelos al usuario
+fix_owner() {
+    if [ "$(stat -c %U .)" != "$(id -un)" ] || [ -n "$(find . -maxdepth 2 ! -user "$(id -un)" -print -quit)" ]; then
+        info "Devolviendo la propiedad de $(pwd) a $(id -un)..."
+        sudo chown -R "$(id -un):$(id -gn)" .
+    fi
+}
+
 # ----------------------------------------------------------------
 # Comprobaciones previas
 # ----------------------------------------------------------------
@@ -103,7 +122,7 @@ sudo xbps-install -Sy \
     alsa-utils brightnessctl scrot \
     nerd-fonts \
     lightdm lightdm-gtk3-greeter \
-    chrony firefox btop \
+    chrony firefox btop cowsay \
     dbus
 
 info "Habilitando servicios (dbus, chronyd)..."
@@ -187,6 +206,7 @@ if [ ! -d dwm ]; then
     git clone "$DWM_REPO"
 fi
 cd dwm
+fix_owner
 
 # El parche vanitygaps es para dwm 6.2, pero HEAD del repo esta en 6.8+.
 # Nos fijamos en el tag 6.2 para que el patch aplique limpio.
@@ -195,7 +215,7 @@ git fetch --tags
 git checkout tags/6.2 -b v6.2-local 2>/dev/null || git checkout v6.2-local
 
 info "Escribiendo config.h de dwm..."
-cat > config.h <<'EOF'
+write_config config.h <<'EOF'
 #include <X11/XF86keysym.h>
 /* See LICENSE file for copyright and license details. */
 
@@ -336,8 +356,10 @@ if [ ! -f vanitygaps.c ]; then
     fi
 fi
 
-info "Compilando dwm..."
-sudo make clean install
+info "Compilando dwm (como usuario; solo la instalacion usa sudo)..."
+make clean
+make
+sudo make install
 
 # ----------------------------------------------------------------
 # 4. Clonar y compilar slstatus
@@ -348,6 +370,7 @@ if [ ! -d slstatus ]; then
     git clone "$SLSTATUS_REPO"
 fi
 cd slstatus
+fix_owner
 
 # Solo se agregan a la barra los modulos que existen en este equipo:
 # wifi si la interfaz es inalambrica, bateria si hay BAT*.
@@ -371,10 +394,12 @@ EOF
         { datetime,     "%s",           "%Y-%m-%d %I:%M %p" },
 };
 EOF
-} > config.h
+} | write_config config.h
 
-info "Compilando slstatus..."
-sudo make clean install
+info "Compilando slstatus (como usuario; solo la instalacion usa sudo)..."
+make clean
+make
+sudo make install
 
 # ----------------------------------------------------------------
 # 5. picom
@@ -386,7 +411,7 @@ backend = "xrender";
 vsync = false;
 
 opacity-rule = [
-  "70:class_g = 'st-256color'"
+  "90:class_g = 'st-256color'"
 ];
 
 shadow = false;
@@ -416,20 +441,54 @@ fi
 # ----------------------------------------------------------------
 # 7. Script wrapper (para que LightDM inicie todo)
 # ----------------------------------------------------------------
-info "Creando script wrapper para la sesion..."
-sudo tee /usr/local/bin/dwm-session >/dev/null <<EOF
+# Programas de inicio: archivo editable en tu home (no se sobrescribe si ya existe)
+info "Creando ~/.config/dwm/autostart.sh (programas que arrancan con dwm)..."
+mkdir -p "$HOME/.config/dwm"
+if [ ! -f "$HOME/.config/dwm/autostart.sh" ]; then
+    cat > "$HOME/.config/dwm/autostart.sh" <<EOF
 #!/bin/sh
-# Comandos de inicio
+# Programas que se inician con dwm. Edita libremente este archivo.
 [ -f "$WALLPAPER_PATH" ] && feh --bg-fill "$WALLPAPER_PATH" &
 picom --config "$HOME/.config/picom/picom.conf" &
 dunst &
 slstatus &
+EOF
+    chmod +x "$HOME/.config/dwm/autostart.sh"
+else
+    warn "~/.config/dwm/autostart.sh ya existe; se conserva."
+fi
 
-# Ejecutar dwm (siempre al final con exec)
+# Wrapper de sesion (lo usan lightdm y startx): ejecuta el autostart y luego dwm
+info "Creando script wrapper para la sesion..."
+sudo tee /usr/local/bin/dwm-session >/dev/null <<'EOF'
+#!/bin/sh
+[ -x "$HOME/.config/dwm/autostart.sh" ] && "$HOME/.config/dwm/autostart.sh" &
 exec dwm
 EOF
 
 sudo chmod +x /usr/local/bin/dwm-session
+
+# Comando para recompilar tras editar los config.h de ~/dwm y ~/slstatus
+info "Instalando el comando 'dwm-rebuild'..."
+sudo tee /usr/local/bin/dwm-rebuild >/dev/null <<'EOF'
+#!/bin/sh
+# Recompila e instala dwm y slstatus desde tu home despues de editar sus config.h
+set -e
+for d in dwm slstatus; do
+    echo "==> Compilando $d"
+    cd "$HOME/$d"
+    make clean
+    make
+    sudo make install
+done
+# slstatus se puede reiniciar sin cerrar sesion
+if [ -n "$DISPLAY" ]; then
+    pkill -x slstatus 2>/dev/null || true
+    nohup slstatus >/dev/null 2>&1 &
+fi
+echo "Listo. Para aplicar los cambios de dwm: Super+Shift+e y vuelve a entrar."
+EOF
+sudo chmod +x /usr/local/bin/dwm-rebuild
 
 # ----------------------------------------------------------------
 # 7b. ~/.xinitrc (para poder usar "startx" ademas de lightdm)
@@ -571,4 +630,10 @@ if [ -n "$KERNEL_NUEVO" ]; then
     warn "Si el kernel nuevo da problemas, elige el anterior en el menu de arranque."
 fi
 warn "Reinicia el equipo (o cierra sesion) para aplicar teclado, zona horaria y lightdm."
+info "Para personalizar el escritorio edita estos archivos de tu home:"
+info "  ~/dwm/config.h                  atajos, colores, fuentes, gaps"
+info "  ~/slstatus/config.h             barra de estado"
+info "  ~/.config/dwm/autostart.sh      programas que arrancan con dwm"
+info "  ~/.config/picom/picom.conf      transparencias"
+info "Despues de editar los config.h ejecuta: dwm-rebuild"
 warn "Si no ves la sesión de DWM en el login, asegúrate de que /usr/local/bin/ esté en tu PATH"
