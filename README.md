@@ -35,6 +35,8 @@ Ahora, inicia el proceso de instalación:
 Se recomienda reiniciar si instalaste un kernel nuevo, si no instalaste kernel nuevo puedes iniciar sesión apenas inicie lightdm (si lightdm falla y no reinicia con el boton "restart" ve a una tty con ctrl+alt+f1 y realiza un sudo reboot) 
 
 para editar los atajos de teclado, ingresar a /home/USUARIO/dwm y dentro editar config.h, hacer un sudo make clean install y por ultimo un super+shift+e para cerrar la sesion y volver a iniciarlo
+
+deje un Atajos.md en la carpeta creada para que vean los atajos predeterminados 
 ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 <img width="2880" height="2160" alt="image" src="https://github.com/user-attachments/assets/38596f5c-47f1-4bc8-b0ff-03b279963d24" />
