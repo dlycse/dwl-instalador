@@ -116,7 +116,7 @@ WALLPAPER_URL="https://wallpapercave.com/download/empty-error-wallpapers-wp83307
 # ligero, revisa xorg-minimal y una sola fuente (xbps-query -Rs nerd-fonts).
 info "Instalando dependencias base..."
 sudo xbps-install -Sy \
-    base-devel git file libX11-devel libXft-devel libXinerama-devel \
+    base-devel file libX11-devel libXft-devel libXinerama-devel \
     freetype-devel fontconfig-devel xorg xinit curl wget \
     dmenu st slock dunst fastfetch picom feh \
     alsa-utils brightnessctl scrot \
