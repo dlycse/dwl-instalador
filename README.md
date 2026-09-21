@@ -20,7 +20,7 @@ cd dwm-instalador
 
 
 3. Darle permisos de ejecución
-Como es un script de instalación (.sh), necesitas decirle al sistema que se le permite ejecutarlo:
+Como es un script de instalación (.sh):
 
 
 chmod +x install-dwm.sh
