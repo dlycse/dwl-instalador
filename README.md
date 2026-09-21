@@ -32,7 +32,7 @@ Ahora, inicia el proceso de instalación:
 
 ./install-dwm.sh
 
-Se recomienda reiniciar si instalaste un kernel nuevo, si no instalaste kernel nuevo puedes iniciar sesión apenas inicie lightdm
+Se recomienda reiniciar si instalaste un kernel nuevo, si no instalaste kernel nuevo puedes iniciar sesión apenas inicie lightdm (si lightdm falla y no reinicia con el boton "restart" ve a una tty con ctrl+alt+f1 y realiza un sudo reboot) 
 
 para editar los atajos de teclado, ingresar a /home/USUARIO/dwm y dentro editar config.h, hacer un sudo make clean install y por ultimo un super+shift+e para cerrar la sesion y volver a iniciarlo
 ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
