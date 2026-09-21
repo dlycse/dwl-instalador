@@ -511,7 +511,7 @@ set ifs "\n"
 cmd open ${{
     case $(file --mime-type -Lb "$f") in
         text/*|application/json|inode/x-empty)
-            ${EDITOR:-nano} $fx ;;
+            nano $fx ;;
         image/*)
             setsid -f feh --scale-down --auto-zoom $fx >/dev/null 2>&1 ;;
         video/*|audio/*)
