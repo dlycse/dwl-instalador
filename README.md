@@ -1,4 +1,4 @@
-VERSION 0.2.5 (BETA) puede contener errores
+VERSION 0.3 (BETA) puede contener errores
 
 SOLO PARA VOID LINUX
 
