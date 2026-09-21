@@ -1,10 +1,10 @@
 VERSION 0.2.5 (BETA) puede contener errores
 
-SOLO PARA VOID LINUX, MAS ADELANTE DISPONIBLE PARA OTRAS DISTRIBUCIONES
+SOLO PARA VOID LINUX
 
 RECUERDA INSTALAR GIT con el siguiente comando
 
-sudo xbps-install -S git
+|sudo xbps-install -S git|
 
 1. Clonar el repositorio
 Copia y pega este comando en tu terminal para descargar todo el código a tu máquina:
