@@ -161,7 +161,7 @@ instalar_base() {
         libseat libseat-devel seatd \
         xorg-server-xwayland \
         mesa-dri libdrm-devel \
-        foot wmenu \
+        foot wmenu void-repo-multilib \
         pipewire wireplumber alsa-pipewire \
         swaybg swaylock grim slurp wl-clipboard \
         brightnessctl \
