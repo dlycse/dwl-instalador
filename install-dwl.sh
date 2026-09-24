@@ -135,29 +135,7 @@ esac
 instalar_base() {
 
     # --------------------------------------------------------
-    # 1. Detectar el paquete de wlroots disponible en los repos
-    # --------------------------------------------------------
-    info "Detectando version de wlroots disponible..."
-    
-    # Busca 'wlroots' o 'wlroots0.XX' prioritariamente
-    WLR_PKG=$(xbps-query -Rs '^wlroots' | awk '{print $2}' | sed 's/-[0-9][0-9._]*$//' | grep -E '^wlroots([0-9\.]*)?$' | sort -uV | tail -n1)
-
-    if [ -z "$WLR_PKG" ]; then
-        error "No se encontro ningun paquete wlroots en los repos de Void."
-        error "Actualizando lista de repositorios..."
-        sudo xbps-install -S
-        WLR_PKG=$(xbps-query -Rs '^wlroots' | awk '{print $2}' | sed 's/-[0-9][0-9._]*$//' | grep -E '^wlroots([0-9\.]*)?$' | sort -uV | tail -n1)
-    fi
-
-    if [ -z "$WLR_PKG" ]; then
-        error "Fallo al detectar wlroots. Revisa tu conexion a internet o repositorios."
-        exit 1
-    fi
-
-    info "wlroots detectado: $WLR_PKG"
-
-    # --------------------------------------------------------
-    # 2. Paquetes necesarios
+    # 1. Paquetes necesarios y dependencias
     # --------------------------------------------------------
     info "Instalando dependencias de dwl y del entorno Wayland..."
     sudo xbps-install -Sy \
@@ -165,7 +143,7 @@ instalar_base() {
         libinput libinput-devel \
         wayland wayland-devel wayland-protocols \
         libxkbcommon libxkbcommon-devel \
-        "$WLR_PKG" "${WLR_PKG}-devel" \
+        wlroots wlroots-devel \
         libseat libseat-devel seatd \
         xorg-server-xwayland \
         mesa-dri libdrm-devel \
@@ -187,7 +165,7 @@ instalar_base() {
     warn "El grupo 'seat' solo se aplica despues de cerrar sesion y volver a entrar."
 
     # --------------------------------------------------------
-    # 2b. Zona horaria y reloj
+    # 2. Zona horaria y reloj
     # --------------------------------------------------------
     info "Configuracion de zona horaria."
     printf "Escribe tu pais (ej: Colombia, Mexico, Argentina, España).\nDeja vacio para usar Colombia por defecto: "
