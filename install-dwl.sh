@@ -150,7 +150,7 @@ instalar_base() {
         foot wmenu void-repo-multilib \
         pipewire wireplumber alsa-pipewire \
         swaybg swaylock grim slurp wl-clipboard \
-        brightnessctl \
+        brightnessctl curl \
         nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv \
         lightdm lightdm-gtk3-greeter \
         chrony firefox btop cowsay dbus
@@ -158,6 +158,32 @@ instalar_base() {
     info "Habilitando servicios (dbus, chronyd, seatd)..."
     [ -L /var/service/dbus ]    || sudo ln -s /etc/sv/dbus /var/service/
     [ -L /var/service/chronyd ] || sudo ln -s /etc/sv/chronyd /var/service/
+	
+	# --------------------------------------------------------
+    # Obtener el usuario real (no root si se ejecutó con sudo)
+    # --------------------------------------------------------
+    REAL_USER="${SUDO_USER:-$USER}"
+
+    # --------------------------------------------------------
+    # Crear e integrar grupo seat de forma automática
+    # --------------------------------------------------------
+    info "Configurando el grupo 'seat' para el usuario $REAL_USER..."
+    
+    # Crear el grupo seat si no existe (-f evita que falle si ya existe)
+    sudo groupadd -f seat
+
+    # Agregar el usuario detectado al grupo seat
+    sudo usermod -aG seat "$REAL_USER"
+
+    # Verificar que el usuario fue agregado correctamente
+    if groups "$REAL_USER" | grep -q '\bseat\b'; then
+        info "Usuario $REAL_USER agregado exitosamente al grupo 'seat'."
+    else
+        warn "No se pudo agregar a $REAL_USER al grupo 'seat'. Inténtalo manualmente con: sudo usermod -aG seat $REAL_USER"
+    fi
+	
+	# Habilitar el servicio 
+	info "Habilitando servicio seatd..."
     [ -L /var/service/seatd ]   || sudo ln -s /etc/sv/seatd /var/service/
 
     info "Agregando tu usuario al grupo 'seat'..."
@@ -640,18 +666,25 @@ if [ "$OPCION" = "2" ]; then
     instalar_gaming
 fi
 
-info "=========================================="
-info "Instalacion de dwl completada."
-info "=========================================="
-info "En el login de lightdm elige la sesion 'dwl'."
-info ""
-info "Archivos para personalizar:"
-info "  ~/dwl/config.h                  atajos, colores (requiere dwl-rebuild)"
-info "  ~/slstatus/config.h             que se muestra en la barra"
-info "  ~/.config/lf/lfrc               como abre lf cada tipo de archivo"
-info "  /usr/local/bin/dwl-session      programas que arrancan con la sesion"
-info "Despues de editar config.h ejecuta: dwl-rebuild"
-info ""
-warn "Si al aplicar el parche 'bar' te dio error, dwl NO se compilo. Revisa el"
-warn "mensaje de arriba y los archivos *.rej dentro de ~/dwl antes de continuar."
+# ------------------------------------------------------------------
+# Habilitar Display Manager (LightDM)
+# ------------------------------------------------------------------
+info "Habilitando el servicio LightDM..."
 [ -L /var/service/lightdm ] || sudo ln -s /etc/sv/lightdm /var/service/
+
+info "=========================================="
+info " ¡Instalación de DWL completada con éxito!"
+info "=========================================="
+info "En la pantalla de inicio de LightDM elige la sesión 'dwl'."
+info ""
+info "Archivos clave para personalizar tu entorno:"
+info "  ~/dwl/config.h                Atajos y colores (requiere dwl-rebuild)"
+info "  ~/slstatus/config.h           Información de la barra superior"
+info "  ~/.config/lf/lfrc             Configuración del gestor de archivos"
+info "  /usr/local/bin/dwl-session     Variables y programas al iniciar sesión"
+info ""
+info "Para aplicar cambios tras editar config.h ejecuta: dwl-rebuild"
+info ""
+warn "IMPORTANTE: Para que los permisos del grupo 'seat' surtan efecto,"
+warn "ES NECESARIO REINICIAR el equipo antes de iniciar sesión en DWL."
+warn "Comando sugerido: sudo reboot"
