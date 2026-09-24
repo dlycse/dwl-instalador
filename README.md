@@ -1,4 +1,6 @@
-VERSION 0.5 (BETA) puede contener errores
+SCRIPT NO FUNCIONAL POR EL MOMENTO 
+
+VERSION 0.1 (BETA) puede contener errores
 
 SOLO PARA VOID LINUX. Minimo 20gb libres para que no tenga errores de almacenamiento
 
