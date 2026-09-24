@@ -138,14 +138,22 @@ instalar_base() {
     # 1. Detectar el paquete de wlroots disponible en los repos
     # --------------------------------------------------------
     info "Detectando version de wlroots disponible..."
-    WLR_PKG=$(xbps-query --regex -Rs '^wlroots[0-9]' \
-        | awk '{print $2}' | sed 's/-[0-9][0-9._]*$//' | sort -uV | tail -n1)
+    
+    # Busca 'wlroots' o 'wlroots0.XX' prioritariamente
+    WLR_PKG=$(xbps-query -Rs '^wlroots' | awk '{print $2}' | sed 's/-[0-9][0-9._]*$//' | grep -E '^wlroots([0-9\.]*)?$' | sort -uV | tail -n1)
 
     if [ -z "$WLR_PKG" ]; then
-        error "No se encontro ningun paquete wlrootsX.YY en los repos de Void."
-        error "Revisa tu conexion o si los repos estan actualizados (sudo xbps-install -Su)."
+        error "No se encontro ningun paquete wlroots en los repos de Void."
+        error "Actualizando lista de repositorios..."
+        sudo xbps-install -S
+        WLR_PKG=$(xbps-query -Rs '^wlroots' | awk '{print $2}' | sed 's/-[0-9][0-9._]*$//' | grep -E '^wlroots([0-9\.]*)?$' | sort -uV | tail -n1)
+    fi
+
+    if [ -z "$WLR_PKG" ]; then
+        error "Fallo al detectar wlroots. Revisa tu conexion a internet o repositorios."
         exit 1
     fi
+
     info "wlroots detectado: $WLR_PKG"
 
     # --------------------------------------------------------
@@ -157,7 +165,7 @@ instalar_base() {
         libinput libinput-devel \
         wayland wayland-devel wayland-protocols \
         libxkbcommon libxkbcommon-devel \
-        "$WLR_PKG" "$WLR_PKG-devel" \
+        "$WLR_PKG" "${WLR_PKG}-devel" \
         libseat libseat-devel seatd \
         xorg-server-xwayland \
         mesa-dri libdrm-devel \
@@ -167,8 +175,7 @@ instalar_base() {
         brightnessctl \
         nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv \
         lightdm lightdm-gtk3-greeter \
-        chrony firefox btop cowsay \
-        dbus
+        chrony firefox btop cowsay dbus
 
     info "Habilitando servicios (dbus, chronyd, seatd)..."
     [ -L /var/service/dbus ]    || sudo ln -s /etc/sv/dbus /var/service/
