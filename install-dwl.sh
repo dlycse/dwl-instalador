@@ -144,7 +144,7 @@ instalar_base() {
         libxkbcommon libxkbcommon-devel \
         wlroots wlroots-devel \
         libseat libseat-devel seatd \
-        xorg-server-xwayland \
+        xorg-server-xwayland xorg-server \
         mesa-dri libdrm-devel \
         pango-devel cairo-devel \
         foot wmenu void-repo-multilib \
