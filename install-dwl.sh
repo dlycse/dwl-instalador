@@ -1,8 +1,8 @@
 #!/bin/sh
 # install-dwl.sh
-# Instalador de dwl (dwm para Wayland) con el parche "bar" (barra estilo dwm)
-# alimentada por slstatus, con dos modos:
-#   1) Basico: dwl+bar, foot, wmenu, slstatus, swaybg, pipewire
+# Instalador de dwl (dwm para Wayland) usando dwl-bar como barra externa
+# (sin parchear el codigo fuente de dwl), con dos modos:
+#   1) Basico: dwl + dwl-bar, foot, wmenu, slstatus, swaybg, pipewire
 #   2) Completo: basico + Steam, drivers de GPU y utilidades de gaming
 #
 # SOLO PARA VOID LINUX.
@@ -10,12 +10,11 @@
 # RECUERDA INSTALAR GIT ANTES DE EJECUTAR ESTE SCRIPT:
 #   sudo xbps-install -S git
 #
-# NOTA IMPORTANTE: el parche "bar" se descarga de un fork de dwl en GitHub
-# y se aplica sobre el codigo actual de dwl. Los parches son sensibles a la
-# version exacta del codigo contra el que se generaron: si dwl cambio mucho
-# desde que se creo el parche, puede fallar al aplicar. Si eso pasa, revisa
-# dwl.c.rej (si existe) o busca una version del parche mas reciente en
-# https://github.com/djpohly/dwl/wiki (seccion de bar).
+# NOTA: a diferencia de una version anterior de este script, aqui NO se
+# aplica ningun parche sobre dwl.c. dwl-bar es un programa aparte que se
+# arranca con la opcion -s de dwl ("dwl -s dwl-bar"), igual que somebar
+# o dwlb. Esto evita el problema de que un parche quede desactualizado
+# contra una version mas nueva de dwl (hunks que fallan al aplicar).
 #
 # NOTA: este script asume que ya tienes LightDM instalado y habilitado
 # (por ejemplo, si ya corriste install-dwm.sh antes). Si no lo tienes,
@@ -105,7 +104,7 @@ fi
 # 0c. Variables de configuracion
 # ----------------------------------------------------------------
 DWL_REPO="https://codeberg.org/dwl/dwl.git"
-BAR_PATCH_URL="https://raw.githubusercontent.com/tonybanters/dwl/master/patches/bar.patch"
+DWLBAR_REPO="https://github.com/MadcowOG/dwl-bar.git"
 SLSTATUS_REPO="https://git.suckless.org/slstatus"
 WALLPAPER_DIR="$HOME/Pictures"
 WALLPAPER_PATH="$WALLPAPER_DIR/wallpaper.jpg"
@@ -115,9 +114,9 @@ WALLPAPER_URL="https://wallpapercave.com/download/empty-error-wallpapers-wp83307
 # MENU DE SELECCION
 # ==================================================================
 echo "=========================================="
-echo "    Instalador dwl (Void Linux) v0.2.0"
+echo "    Instalador dwl (Void Linux) v0.3.0"
 echo "=========================================="
-echo "1) Instalacion BASICA (dwl+bar, foot, wmenu, slstatus, swaybg)"
+echo "1) Instalacion BASICA (dwl+dwl-bar, foot, wmenu, slstatus, swaybg)"
 echo "2) Instalacion COMPLETA (basica + Steam y drivers de GPU)"
 echo "3) Salir"
 printf "Opcion [1-3]: "
@@ -137,7 +136,7 @@ instalar_base() {
     # --------------------------------------------------------
     # 1. Paquetes necesarios y dependencias
     # --------------------------------------------------------
-    info "Instalando dependencias de dwl y del entorno Wayland..."
+    info "Instalando dependencias de dwl, dwl-bar y del entorno Wayland..."
     sudo xbps-install -Sy \
         base-devel file pkg-config \
         libinput libinput-devel \
@@ -147,6 +146,7 @@ instalar_base() {
         libseat libseat-devel seatd \
         xorg-server-xwayland \
         mesa-dri libdrm-devel \
+        pango-devel cairo-devel \
         foot wmenu void-repo-multilib \
         pipewire wireplumber alsa-pipewire \
         swaybg swaylock grim slurp wl-clipboard \
@@ -158,8 +158,8 @@ instalar_base() {
     info "Habilitando servicios (dbus, chronyd, seatd)..."
     [ -L /var/service/dbus ]    || sudo ln -s /etc/sv/dbus /var/service/
     [ -L /var/service/chronyd ] || sudo ln -s /etc/sv/chronyd /var/service/
-	
-	# --------------------------------------------------------
+
+    # --------------------------------------------------------
     # Obtener el usuario real (no root si se ejecutó con sudo)
     # --------------------------------------------------------
     REAL_USER="${SUDO_USER:-$USER}"
@@ -168,27 +168,20 @@ instalar_base() {
     # Crear e integrar grupo seat de forma automática
     # --------------------------------------------------------
     info "Configurando el grupo 'seat' para el usuario $REAL_USER..."
-    
-    # Crear el grupo seat si no existe (-f evita que falle si ya existe)
-    sudo groupadd -f seat
 
-    # Agregar el usuario detectado al grupo seat
+    sudo groupadd -f seat
     sudo usermod -aG seat "$REAL_USER"
 
-    # Verificar que el usuario fue agregado correctamente
     if groups "$REAL_USER" | grep -q '\bseat\b'; then
         info "Usuario $REAL_USER agregado exitosamente al grupo 'seat'."
     else
         warn "No se pudo agregar a $REAL_USER al grupo 'seat'. Inténtalo manualmente con: sudo usermod -aG seat $REAL_USER"
     fi
-	
-	# Habilitar el servicio 
-	info "Habilitando servicio seatd..."
+
+    info "Habilitando servicio seatd..."
     [ -L /var/service/seatd ]   || sudo ln -s /etc/sv/seatd /var/service/
 
-    info "Agregando tu usuario al grupo 'seat'..."
-    sudo usermod -aG seat "$(id -un)" || warn "Agregalo a mano: sudo usermod -aG seat $(id -un)"
-    warn "El grupo 'seat' solo se aplica despues de cerrar sesion y volver a entrar."
+    warn "El grupo 'seat' solo se aplica despues de cerrar sesion y volver a entrar (o reiniciar)."
 
     # --------------------------------------------------------
     # 2. Zona horaria y reloj
@@ -248,7 +241,7 @@ instalar_base() {
     fi
 
     # --------------------------------------------------------
-    # 3. Teclado (layout que usara dwl y la consola)
+    # 3. Teclado (layout que usara la consola)
     # --------------------------------------------------------
     info "Configuracion de teclado."
     KB_XKB=""
@@ -279,7 +272,7 @@ instalar_base() {
     fi
 
     # --------------------------------------------------------
-    # 4. Clonar dwl, aplicar el parche "bar" y compilar
+    # 4. Clonar y compilar dwl (SIN PARCHES, version vanilla)
     # --------------------------------------------------------
     cd "$HOME"
     if [ ! -d dwl ]; then
@@ -289,186 +282,46 @@ instalar_base() {
     cd dwl
     fix_owner
 
-    info "Descargando el parche 'bar' (barra estilo dwm)..."
-    [ -f bar.patch ] || curl -fsSO "$BAR_PATCH_URL"
-
-    if [ ! -f drw.c ] && [ ! -f drwl.h ]; then
-        info "Aplicando el parche bar..."
-        if ! patch -p1 -N --fuzz=3 < bar.patch; then
-            error "El parche 'bar' no aplico limpio contra esta version de dwl."
-            error "Revisa los archivos *.rej que haya dejado y corrigelos a mano,"
-            error "o busca una version mas reciente del parche en:"
-            error "  https://github.com/djpohly/dwl/wiki"
-            exit 1
-        fi
-    else
-        warn "Parece que el parche bar ya estaba aplicado (drw.c/drwl.h existen); se omite."
-    fi
-
     if [ -f config.h ]; then
         warn "config.h ya existe: se conserva tu version, no se modifica."
-        warn "Si es de una instalacion anterior sin el parche bar, puede que no compile."
-        warn "Bórralo (o revisa que tenga togglebar/ClkStatusText) y vuelve a correr el script si falla."
     else
-        info "Escribiendo config.h (con tu esquema Catppuccin y el parche bar)..."
-        write_config config.h <<EOF
-/* dwl - config.h con el parche bar aplicado */
-
-/* --- Apariencia --- */
-static const unsigned int borderpx = 2;
-static const unsigned int snap     = 32;
-static const int showbar           = 1;
-static const int topbar            = 1;
-
-static const unsigned int gappih   = 10;
-static const unsigned int gappiv   = 10;
-static const unsigned int gappoh   = 10;
-static const unsigned int gappov   = 10;
-static const int smartgaps         = 0;
-
-static const char *fonts[]         = { "JetBrainsMono Nerd Font:size=11" };
-
-/* Colores Catppuccin Mocha */
-static const char col_gray1[]      = "#1e1e2e";
-static const char col_gray2[]      = "#313244";
-static const char col_gray3[]      = "#cdd6f4";
-static const char col_gray4[]      = "#ffffff";
-static const char col_cyan[]       = "#89b4fa";
-
-static const char *colors[][3]     = {
-	/*               fg         bg         border   */
-	[SchemeNorm] = { col_gray3, col_gray1, col_gray2 },
-	[SchemeSel]  = { col_gray4, col_gray1, col_cyan  },
-};
-
-/* Tags / Workspaces */
-static const char *tags[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9" };
-
-/* --- Reglas de Ventanas (Rules) --- */
-static const Rule rules[] = {
-	/* app_id     title       tags mask     isfloating   monitor */
-	{ "Gimp",     NULL,       0,            1,           -1 },
-	{ "firefox",  NULL,       1 << 0,       0,           -1 },
-};
-
-/* --- Layouts --- */
-static const float mfact     = 0.50;
-static const int nmaster     = 1;
-static const int resizehints = 1;
-
-static const Layout layouts[] = {
-	{ "[]=",    tile },
-	{ "><>",    NULL },
-	{ "[M]",    monocle },
-};
-
-/* --- Teclado --- */
-static const struct xkb_rule_names xkb_rules = {
-	.rules = NULL,
-	.model = NULL,
-	.layout = "$KB_XKB",
-	.variant = NULL,
-	.options = NULL,
-};
-
-/* --- Tecla Modificadora --- */
-#define MODKEY WLR_MODIFIER_LOGO
-
-#define TAGKEYS(KEY,SKEY,TAG) \
-	{ MODKEY,                    KEY,  view,       {.ui = 1 << TAG} }, \
-	{ MODKEY|WLR_MODIFIER_CTRL,  KEY,  toggleview, {.ui = 1 << TAG} }, \
-	{ MODKEY|WLR_MODIFIER_SHIFT, KEY,  tag,        {.ui = 1 << TAG} }, \
-	{ MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT, KEY, toggletag, {.ui = 1 << TAG} }
-
-#define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
-
-/* --- Comandos --- */
-static const char *wmenucmd[]   = { "wmenu-run", "-fn", "JetBrainsMono Nerd Font 11", "-N", col_gray1, "-n", col_gray3, "-S", col_cyan, "-s", col_gray4, NULL };
-static const char *termcmd[]    = { "foot", NULL };
-static const char *browsercmd[] = { "firefox", NULL };
-
-static const Key keys[] = {
-	{ MODKEY,                        XKB_KEY_d,                spawn,          {.v = wmenucmd } },
-	{ MODKEY,                        XKB_KEY_Return,           spawn,          {.v = termcmd } },
-	{ MODKEY,                        XKB_KEY_t,                spawn,          {.v = termcmd } },
-	{ MODKEY,                        XKB_KEY_b,                spawn,          {.v = browsercmd } },
-	{ MODKEY,                        XKB_KEY_e,                spawn,          SHCMD("foot -e lf") },
-
-	{ MODKEY,                        XKB_KEY_q,                killclient,     {0} },
-	{ MODKEY,                        XKB_KEY_f,                setlayout,      {.v = &layouts[2]} },
-	{ MODKEY,                        XKB_KEY_w,                togglebar,      {0} },
-	{ MODKEY|WLR_MODIFIER_SHIFT,     XKB_KEY_T,                togglefloating, {0} },
-	{ MODKEY,                        XKB_KEY_r,                setlayout,      {0} },
-
-	{ MODKEY,                        XKB_KEY_j,                focusstack,     {.i = +1 } },
-	{ MODKEY,                        XKB_KEY_k,                focusstack,     {.i = -1 } },
-	{ MODKEY,                        XKB_KEY_h,                setmfact,       {.f = -0.05} },
-	{ MODKEY,                        XKB_KEY_l,                setmfact,       {.f = +0.05} },
-	{ MODKEY,                        XKB_KEY_Down,             focusstack,     {.i = +1 } },
-	{ MODKEY,                        XKB_KEY_Up,               focusstack,     {.i = -1 } },
-
-	{ MODKEY,                        XKB_KEY_i,                incnmaster,     {.i = +1 } },
-	{ MODKEY,                        XKB_KEY_comma,            focusmon,       {.i = -1 } },
-	{ MODKEY,                        XKB_KEY_period,           focusmon,       {.i = +1 } },
-	{ MODKEY|WLR_MODIFIER_SHIFT,     XKB_KEY_less,             tagmon,         {.i = -1 } },
-	{ MODKEY|WLR_MODIFIER_SHIFT,     XKB_KEY_greater,          tagmon,         {.i = +1 } },
-
-	{ 0,                             XKB_KEY_XF86AudioRaiseVolume,  spawn,   SHCMD("wpctl set-volume @DEFAULT_AUDIO_SINK@ 3%+") },
-	{ 0,                             XKB_KEY_XF86AudioLowerVolume,  spawn,   SHCMD("wpctl set-volume @DEFAULT_AUDIO_SINK@ 3%-") },
-	{ 0,                             XKB_KEY_XF86AudioMute,         spawn,   SHCMD("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle") },
-	{ 0,                             XKB_KEY_XF86MonBrightnessUp,   spawn,   SHCMD("brightnessctl set +5%") },
-	{ 0,                             XKB_KEY_XF86MonBrightnessDown, spawn,   SHCMD("brightnessctl set 5%-") },
-
-	{ 0,                             XKB_KEY_Print,            spawn,          SHCMD("grim -g \"\$(slurp)\" - | wl-copy") },
-
-	{ MODKEY,                        XKB_KEY_space,            setlayout,      {0} },
-	{ MODKEY,                        XKB_KEY_Tab,              view,           {0} },
-	{ MODKEY|WLR_MODIFIER_SHIFT,     XKB_KEY_E,                quit,           {0} },
-
-	TAGKEYS(                         XKB_KEY_1, XKB_KEY_exclam,               0),
-	TAGKEYS(                         XKB_KEY_2, XKB_KEY_at,                   1),
-	TAGKEYS(                         XKB_KEY_3, XKB_KEY_numbersign,           2),
-	TAGKEYS(                         XKB_KEY_4, XKB_KEY_dollar,               3),
-	TAGKEYS(                         XKB_KEY_5, XKB_KEY_percent,              4),
-	TAGKEYS(                         XKB_KEY_6, XKB_KEY_asciicircum,          5),
-	TAGKEYS(                         XKB_KEY_7, XKB_KEY_ampersand,            6),
-	TAGKEYS(                         XKB_KEY_8, XKB_KEY_asterisk,             7),
-	TAGKEYS(                         XKB_KEY_9, XKB_KEY_parenleft,            8),
-};
-
-static const Button buttons[] = {
-	{ ClkLtSymbol,   0,      BTN_LEFT,   setlayout,      {0} },
-	{ ClkLtSymbol,   0,      BTN_RIGHT,  setlayout,      {.v = &layouts[2]} },
-	{ ClkTitle,      0,      BTN_MIDDLE, zoom,           {0} },
-	{ ClkStatusText, 0,      BTN_MIDDLE, spawn,          {.v = termcmd } },
-	{ ClkClientWin,  MODKEY, BTN_LEFT,   movemouse,      {0} },
-	{ ClkClientWin,  MODKEY, BTN_MIDDLE, togglefloating, {0} },
-	{ ClkClientWin,  MODKEY, BTN_RIGHT,  resizemouse,    {0} },
-	{ ClkTagBar,     0,      BTN_LEFT,   view,           {0} },
-	{ ClkTagBar,     0,      BTN_RIGHT,  toggleview,     {0} },
-	{ ClkTagBar,     MODKEY, BTN_LEFT,   tag,            {0} },
-	{ ClkTagBar,     MODKEY, BTN_RIGHT,  toggletag,      {0} },
-};
-EOF
+        info "Copiando config.def.h -> config.h (configuracion por defecto de dwl, sin parches)..."
+        cp config.def.h config.h
+        warn "El layout de teclado que elegiste ('$KB_XKB') NO se escribe automaticamente"
+        warn "en config.h para evitar romper la compilacion con una edicion a ciegas."
+        warn "Para activarlo, edita ~/dwl/config.h, busca 'xkb_rules' y agrega, por ejemplo:"
+        warn '  .layout = "'"$KB_XKB"'",'
+        warn "y luego ejecuta: dwl-rebuild"
     fi
 
-    info "Habilitando XWayland en config.mk (Firefox/Steam vía XWayland)..."
-    if grep -q '^#XWAYLAND' config.mk 2>/dev/null; then
-        sed -i 's/^#XWAYLAND/XWAYLAND/' config.mk
-    fi
-
-    info "Compilando dwl (como usuario; solo la instalacion usa sudo)..."
+    info "Compilando dwl (version vanilla, sin parches; como usuario, solo la instalacion usa sudo)..."
     make clean 2>/dev/null || true
     make
     sudo make install
 
     # --------------------------------------------------------
-    # 5. slstatus (se reutiliza si ya existe de install-dwm.sh)
+    # 5. dwl-bar (barra externa, se arranca con 'dwl -s dwl-bar')
+    # --------------------------------------------------------
+    if command -v dwl-bar >/dev/null 2>&1; then
+        info "dwl-bar ya esta instalado; se reutiliza."
+    else
+        info "Clonando y compilando dwl-bar..."
+        cd "$HOME"
+        [ -d dwl-bar ] || git clone "$DWLBAR_REPO"
+        cd dwl-bar
+        fix_owner
+        make clean 2>/dev/null || true
+        make
+        sudo make install
+    fi
+
+    # --------------------------------------------------------
+    # 6. slstatus (utilidad de estado independiente; opcional)
     # --------------------------------------------------------
     if [ -x "$HOME/slstatus/slstatus" ] || command -v slstatus >/dev/null 2>&1; then
         info "slstatus ya esta compilado (de una instalacion anterior); se reutiliza."
     else
-        info "Compilando slstatus (para alimentar la barra de dwl con -o)..."
+        info "Compilando slstatus (utilidad de estado, uso opcional/independiente)..."
         cd "$HOME"
         [ -d slstatus ] || git clone "$SLSTATUS_REPO"
         cd slstatus
@@ -505,8 +358,12 @@ SLEOF
         sudo make install
     fi
 
+    warn "dwl-bar muestra tags/titulo/layout por si solo. Para reloj/bateria/etc dentro"
+    warn "de la barra hace falta 'someblocks' (github.com/SlashandDash/someblocks o"
+    warn "similar) alimentando a dwl-bar; no se instala en este script. Avisame si lo quieres agregar."
+
     # --------------------------------------------------------
-    # 6. lf (mismo navegador de archivos, imv en vez de feh)
+    # 7. lf (navegador de archivos)
     # --------------------------------------------------------
     info "Configurando lf..."
     mkdir -p "$HOME/.config/lf"
@@ -530,7 +387,7 @@ cmd open ${{
 EOF
 
     # --------------------------------------------------------
-    # 7. Wallpaper
+    # 8. Wallpaper
     # --------------------------------------------------------
     mkdir -p "$WALLPAPER_DIR"
     if [ ! -f "$WALLPAPER_PATH" ]; then
@@ -544,7 +401,7 @@ EOF
     fi
 
     # --------------------------------------------------------
-    # 8. Wrapper de sesion (lo usa lightdm)
+    # 9. Wrapper de sesion (lo usa lightdm)
     # --------------------------------------------------------
     info "Creando script wrapper para la sesion..."
     sudo tee /usr/local/bin/dwl-session >/dev/null <<EOF
@@ -563,8 +420,8 @@ pipewire-pulse &
 # Fondo de pantalla
 [ -f "$WALLPAPER_PATH" ] && swaybg -i "$WALLPAPER_PATH" -m fill &
 
-# dwl con barra (parche bar) alimentada por slstatus
-slstatus -o | dwl
+# dwl arranca dwl-bar como su proceso de arranque (-s), sin parches.
+dwl -s dwl-bar
 EOF
     sudo chmod +x /usr/local/bin/dwl-session
 
@@ -581,7 +438,7 @@ EOF
     sudo chmod +x /usr/local/bin/dwl-rebuild
 
     # --------------------------------------------------------
-    # 9. Registrar sesion Wayland en lightdm
+    # 10. Registrar sesion Wayland en lightdm
     # --------------------------------------------------------
     info "Instalando y habilitando lightdm (si no estaba)..."
     sudo xbps-install -Sy lightdm lightdm-gtk3-greeter
@@ -591,7 +448,7 @@ EOF
     sudo tee /usr/share/wayland-sessions/dwl.desktop >/dev/null <<EOF
 [Desktop Entry]
 Name=dwl
-Comment=dwm para Wayland (con barra)
+Comment=dwm para Wayland (con dwl-bar)
 Exec=/usr/local/bin/dwl-session
 Type=Application
 EOF
@@ -629,7 +486,7 @@ instalar_gaming() {
             sudo xbps-install -Sy nvidia nvidia-libs-32bit
             echo "options nvidia-drm modeset=1" | sudo tee /etc/modprobe.d/nvidia-drm-modeset.conf >/dev/null
             warn "Si dwl no arranca o el cursor no se ve, agrega esta linea a"
-            warn "/usr/local/bin/dwl-session, antes de 'slstatus -o | dwl':"
+            warn "/usr/local/bin/dwl-session, antes de 'dwl -s dwl-bar':"
             warn '  export WLR_NO_HARDWARE_CURSORS=1'
             ;;
         amd)
@@ -649,7 +506,7 @@ instalar_gaming() {
     info "Instalando Steam, gamemode y gamescope..."
     sudo xbps-install -Sy steam gamemode gamescope
 
-    info "Steam corre sobre XWayland automaticamente (ya quedo habilitado en dwl)."
+    info "Steam corre sobre XWayland automaticamente (ya quedo habilitado por dwl/wlroots)."
     info "gamescope es en si mismo un mini-compositor Wayland: puedes lanzar juegos"
     info "pesados con 'gamescope -- %command%' desde las propiedades de lanzamiento en Steam."
 
@@ -666,11 +523,7 @@ if [ "$OPCION" = "2" ]; then
     instalar_gaming
 fi
 
-# ------------------------------------------------------------------
-# Habilitar Display Manager (LightDM)
-# ------------------------------------------------------------------
-info "Habilitando el servicio LightDM..."
-[ -L /var/service/lightdm ] || sudo ln -s /etc/sv/lightdm /var/service/
+
 
 info "=========================================="
 info " ¡Instalación de DWL completada con éxito!"
@@ -678,8 +531,9 @@ info "=========================================="
 info "En la pantalla de inicio de LightDM elige la sesión 'dwl'."
 info ""
 info "Archivos clave para personalizar tu entorno:"
-info "  ~/dwl/config.h                Atajos y colores (requiere dwl-rebuild)"
-info "  ~/slstatus/config.h           Información de la barra superior"
+info "  ~/dwl/config.h                Atajos, colores, reglas, layout de teclado (requiere dwl-rebuild)"
+info "  ~/dwl-bar/src/config.h        Apariencia de la barra externa dwl-bar"
+info "  ~/slstatus/config.h           Utilidad de estado independiente (opcional)"
 info "  ~/.config/lf/lfrc             Configuración del gestor de archivos"
 info "  /usr/local/bin/dwl-session     Variables y programas al iniciar sesión"
 info ""
@@ -688,3 +542,9 @@ info ""
 warn "IMPORTANTE: Para que los permisos del grupo 'seat' surtan efecto,"
 warn "ES NECESARIO REINICIAR el equipo antes de iniciar sesión en DWL."
 warn "Comando sugerido: sudo reboot"
+
+# ------------------------------------------------------------------
+# Habilitar Display Manager (LightDM)
+# ------------------------------------------------------------------
+info "Habilitando el servicio LightDM..."
+[ -L /var/service/lightdm ] || sudo ln -s /etc/sv/lightdm /var/service/
