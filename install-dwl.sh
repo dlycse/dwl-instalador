@@ -668,7 +668,7 @@ instalar_base() {
         mesa-dri libdrm-devel \
         pango-devel cairo-devel \
         pixman pixman-devel fcft fcft-devel tllist \
-        foot wmenu \
+        foot wmenu fastfetch \
         pipewire wireplumber alsa-pipewire \
         swaybg swaylock grim slurp wl-clipboard \
         brightnessctl curl procps-ng \
@@ -967,7 +967,7 @@ static const enum libinput_config_tap_button_map button_map = LIBINPUT_CONFIG_TA
 /* commands */
 static const char *termcmd[]    = { "foot", NULL };          /* el "st" de Wayland */
 static const char *browsercmd[] = { "firefox", NULL };
-static const char *dmenucmd[]   = { "wmenu-run", "-f", "monospace:size=11", "-nb", "#1e1e2e", "-nf", "#cdd6f4", "-sb", "#89b4fa", "-sf", "#ffffff", NULL };
+static const char *dmenucmd[]   = { "wmenu-run", "-f", "monospace:size=11", "-N", "1e1e2e", "-n", "cdd6f4", "-S", "89b4fa", "-s", "ffffff", NULL };
 static const char *lfcmd[]      = { "foot", "-e", "lf", NULL };
 /* Volumen via PipeWire, pasos de 3% como en tu dwm */
 static const char *upvol[]      = { "wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "3%+", "-l", "1.0", NULL };
