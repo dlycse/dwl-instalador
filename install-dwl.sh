@@ -1,5 +1,5 @@
 #!/bin/sh
-# install-dwl-v0.9.0.sh v0.9.0
+# install-dwl-v0.9.1.sh v0.9.1
 # Instalador de dwl (dwm para Wayland) para VOID LINUX.
 #
 # Modos:
@@ -171,7 +171,7 @@ GREETER_USER="_greeter"
 # MENU DE SELECCION
 # ==================================================================
 echo "=========================================="
-echo "    Instalador dwl (Void Linux) v0.9.0"
+echo "    Instalador dwl (Void Linux) v0.9.1"
 echo "=========================================="
 echo "Barra: dwlb (https://github.com/kolunmi/dwlb)"
 echo "Gestor de inicio: greetd + tuigreet"
@@ -284,7 +284,7 @@ instalar_drivers_gpu() {
 # prime-run: ejecuta una aplicacion usando la GPU NVIDIA en equipos hibridos.
 #   prime-run steam
 #   prime-run mpv video.mkv
-# Creado por install-dwl-v0.9.0.sh porque Void no empaqueta nvidia-prime.
+# Creado por install-dwl-v0.9.1.sh porque Void no empaqueta nvidia-prime.
 export __NV_PRIME_RENDER_OFFLOAD=1
 export __NV_PRIME_RENDER_OFFLOAD_PROVIDER=NVIDIA-G0
 export __GLX_VENDOR_LIBRARY_NAME=nvidia
@@ -384,7 +384,7 @@ configurar_dwlb() {
     # agrupar. Cambiar aqui NO requiere recompilar: basta con reiniciar dwl.
     write_config "$HOME/.config/dwlb/config" <<EOF
 # Configuracion de dwlb  (https://github.com/kolunmi/dwlb)
-# Generada por install-dwl-v0.9.0.sh
+# Generada por install-dwl-v0.9.1.sh
 # Una opcion por linea, tal cual se pasarian en la linea de comandos.
 # Referencia completa: man 1 dwlb
 
@@ -525,7 +525,7 @@ configurar_greetd() {
     backup_file /etc/greetd/config.toml
 
     sudo tee /etc/greetd/config.toml >/dev/null <<EOF
-# Generado por install-dwl-v0.9.0.sh (v0.9.0)
+# Generado por install-dwl-v0.9.1.sh (v0.9.1)
 # Documentacion: man 1 tuigreet
 
 [terminal]
@@ -554,7 +554,7 @@ EOF
             info "pam_turnstile ya estaba en $PAM_FILE."
         else
             backup_file "$PAM_FILE"
-            printf '\n# Anadido por install-dwl-v0.9.0.sh para turnstile (XDG_RUNTIME_DIR)\nsession\toptional\tpam_turnstile.so\n' | \
+            printf '\n# Anadido por install-dwl-v0.9.1.sh para turnstile (XDG_RUNTIME_DIR)\nsession\toptional\tpam_turnstile.so\n' | \
                 sudo tee -a "$PAM_FILE" >/dev/null
             info "Anadido 'session optional pam_turnstile.so' a $PAM_FILE"
             warn "Si algo falla al iniciar sesion, restaura la copia .bak-* de $PAM_FILE."
@@ -842,55 +842,98 @@ instalar_base() {
         info "dwl sin parche IPC: dwlb leera el estado por stdin (-no-ipc)."
     fi
 
+    # Un config.h de la API ANTIGUA de dwl rompe la compilacion con errores
+    # tipo "'TAGCOUNT' undeclared" o "'log_level' undeclared". Se detecta por
+    # sus senales inequivocas y se aparta para regenerar uno valido.
+    if [ -f config.h ] && { grep -q 'static const char \*tags\[\]' config.h || \
+                            ! grep -q 'TAGCOUNT' config.h || \
+                            ! grep -q 'log_level' config.h || \
+                            ! grep -q 'axes\[\]' config.h; }; then
+        CONFIG_VIEJO="config.h.antiguo-$(date +%Y%m%d%H%M%S)"
+        warn "Tu ~/dwl/config.h usa la API ANTIGUA de dwl (falta TAGCOUNT/log_level/axes)."
+        warn "Es justo lo que provoca los errores 'TAGCOUNT undeclared' al compilar."
+        mv config.h "$CONFIG_VIEJO"
+        warn "Lo guarde como ~/dwl/$CONFIG_VIEJO y escribo uno nuevo compatible."
+    fi
+
     if [ -f config.h ]; then
-        warn "config.h ya existe: se conserva tu version (no se sobreescribe)."
+        warn "config.h ya existe y es compatible: se conserva tu version."
         warn "Si quieres regenerarlo, borra ~/dwl/config.h y vuelve a ejecutar."
     else
         info "Escribiendo config.h personalizado (atajos, volumen, brillo, screenshot, barra)..."
 
         cat > config.h <<EOF
-/* Configuracion de dwl generada por install-dwl-v0.9.0.sh
- * Personaliza este archivo y aplica cambios con: dwl-rebuild
+/* Configuracion de dwl generada por install-dwl-v0.9.1.sh
+ * Escrita contra la API ACTUAL de dwl (codeberg.org/dwl/dwl, rama main).
+ * Cambios de dwl que rompian los config.h antiguos y aqui ya estan resueltos:
+ *   - Ya NO existe el array tags[]: ahora se usa  #define TAGCOUNT (9)
+ *   - Hace falta  static int log_level  (lo usa main() con la opcion -d)
+ *   - Hacen falta  snap  y  fullscreen_bg
+ *   - MonitorRule lleva dos campos extra al final: x e y (-1,-1 = automatico)
+ *   - Los botones usan BTN_LEFT/BTN_MIDDLE/BTN_RIGHT y la funcion moveresize
+ *     con CurMove/CurResize (ya no movemouse/resizemouse/Button1)
+ *   - Debe existir el array axes[] aunque este vacio
+ *   - Los atajos CHVT(1..12) deben conservarse: son los Ctrl+Alt+Fx
+ * Aplica cambios con: dwl-rebuild
  */
-#include <xkbcommon/xkbcommon-keysyms.h>
+
+/* Ayuda para escribir colores en hexadecimal (0xRRGGBBAA) */
+#define COLOR(hex)    { ((hex >> 24) & 0xFF) / 255.0f, \\
+                        ((hex >> 16) & 0xFF) / 255.0f, \\
+                        ((hex >> 8) & 0xFF) / 255.0f, \\
+                        (hex & 0xFF) / 255.0f }
 
 /* appearance */
-static const int sloppyfocus        = 1;
+static const int sloppyfocus               = 1;  /* el foco sigue al raton */
 static const int bypass_surface_visibility = 0;
-static const unsigned int borderpx  = 2;
-static const float rootcolor[]      = {0.11f, 0.11f, 0.18f, 1.0f};
-static const float bordercolor[]    = {0.19f, 0.19f, 0.26f, 1.0f};
-static const float focuscolor[]     = {0.53f, 0.70f, 0.98f, 1.0f};
-static const float urgentcolor[]    = {0.93f, 0.31f, 0.31f, 1.0f};
+static const unsigned int borderpx         = 2;  /* grosor del borde */
+static const unsigned int snap             = 32; /* iman al mover flotantes */
+static const float rootcolor[]             = COLOR(0x1e1e2eff);
+static const float bordercolor[]           = COLOR(0x313244ff);
+static const float focuscolor[]            = COLOR(0x89b4faff);
+static const float urgentcolor[]           = COLOR(0xf38ba8ff);
+/* Fondo en pantalla completa (alpha 0 = comportamiento antiguo) */
+static const float fullscreen_bg[]         = {0.0f, 0.0f, 0.0f, 1.0f};
 
-/* tagging */
-static const char *tags[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9" };
+/* tagging - TAGCOUNT no puede pasar de 31.
+ * OJO: dwl ya no usa un array de nombres; dwlb pone los numeros por su cuenta
+ * (y con -tags puedes renombrarlos sin recompilar dwl). */
+#define TAGCOUNT (9)
+
+/* logging: WLR_ERROR, WLR_INFO o WLR_DEBUG */
+static int log_level = WLR_ERROR;
 
 static const Rule rules[] = {
     /* app_id     title       tags mask     isfloating   monitor */
     { "Gimp",     NULL,       0,            1,           -1 },
     { "firefox",  NULL,       1 << 0,       0,           -1 },
+    /* Debe existir al menos una regla. */
 };
 
 /* layout(s) */
 static const Layout layouts[] = {
+    /* simbolo    funcion */
     { "[]=",      tile },
-    { "><>",      NULL },
+    { "><>",      NULL },    /* sin funcion = flotante */
     { "[M]",      monocle },
 };
 
-/* monitor(s) */
+/* monitor(s): los dos ultimos campos son x e y; (-1,-1) = autoconfigurar */
 static const MonitorRule monrules[] = {
-    /* name       mfact nmaster scale layout       rotate/reflect */
-    { NULL,       0.50f, 1,      1,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL },
+    /* nombre     mfact  nmaster scale layout       rotate/reflect                x    y */
+    { NULL,       0.55f, 1,      1,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,  -1,  -1 },
+    /* Debe existir al menos una regla de monitor. */
 };
 
 /* keyboard */
 static const struct xkb_rule_names xkb_rules = {
     .rules = NULL, .model = NULL, .layout = "$KB_XKB", .variant = NULL, .options = NULL,
 };
+
 static const int repeat_rate = 25;
 static const int repeat_delay = 600;
+
+/* Trackpad */
 static const int tap_to_click = 1;
 static const int tap_and_drag = 1;
 static const int drag_lock = 1;
@@ -898,16 +941,26 @@ static const int natural_scrolling = 0;
 static const int disable_while_typing = 1;
 static const int left_handed = 0;
 static const int middle_button_emulation = 0;
+static const enum libinput_config_scroll_method scroll_method = LIBINPUT_CONFIG_SCROLL_2FG;
+static const enum libinput_config_click_method click_method = LIBINPUT_CONFIG_CLICK_METHOD_BUTTON_AREAS;
+static const uint32_t send_events_mode = LIBINPUT_CONFIG_SEND_EVENTS_ENABLED;
+static const enum libinput_config_accel_profile accel_profile = LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE;
+static const double accel_speed = 0.0;
+static const enum libinput_config_tap_button_map button_map = LIBINPUT_CONFIG_TAP_MAP_LRM;
 
 /* Modificador (tecla Windows/Super) */
 #define MODKEY WLR_MODIFIER_LOGO
 
-/* Configuracion de TAGKEYS */
+/* TAGKEYS: SKEY es la tecla YA con Shift aplicado. En un teclado latam/es,
+ * Shift+1 no produce '1' sino '!', por eso hacen falta las dos teclas. */
 #define TAGKEYS(KEY,SKEY,TAG) \\
     { MODKEY,                    KEY,            view,            {.ui = 1 << TAG} }, \\
     { MODKEY|WLR_MODIFIER_CTRL,  KEY,            toggleview,      {.ui = 1 << TAG} }, \\
     { MODKEY|WLR_MODIFIER_SHIFT, SKEY,           tag,             {.ui = 1 << TAG} }, \\
     { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,SKEY,toggletag, {.ui = 1 << TAG} }
+
+/* Para lanzar ordenes de shell al estilo dwm */
+#define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
 
 /* commands */
 static const char *termcmd[]    = { "foot", NULL };
@@ -926,35 +979,53 @@ static const char *bartoggle[]  = { "dwlb", "-toggle-visibility", "all", NULL };
 static const char *barmove[]    = { "dwlb", "-toggle-location", "all", NULL };
 
 static const Key keys[] = {
-    /* modifier                  key                            function        argument */
-    { MODKEY,                    XKB_KEY_d,                     spawn,          {.v = dmenucmd } },
-    { MODKEY,                    XKB_KEY_Return,                spawn,          {.v = termcmd } },
-    { MODKEY,                    XKB_KEY_t,                     spawn,          {.v = termcmd } },
-    { MODKEY,                    XKB_KEY_b,                     spawn,          {.v = browsercmd } },
-    { MODKEY,                    XKB_KEY_e,                     spawn,          {.v = lfcmd } },
-    { MODKEY,                    XKB_KEY_q,                     killclient,     {0} },
-    { MODKEY,                    XKB_KEY_f,                     setlayout,      {.v = &layouts[2]} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_T,                     togglefloating, {0} },
-    { MODKEY,                    XKB_KEY_r,                     setlayout,      {0} },
-    { MODKEY,                    XKB_KEY_j,                     focusstack,     {.i = +1 } },
-    { MODKEY,                    XKB_KEY_k,                     focusstack,     {.i = -1 } },
-    { MODKEY,                    XKB_KEY_h,                     setmfact,       {.f = -0.05} },
-    { MODKEY,                    XKB_KEY_l,                     setmfact,       {.f = +0.05} },
-    { MODKEY,                    XKB_KEY_i,                     incnmaster,     {.i = +1 } },
-    { MODKEY,                    XKB_KEY_space,                 setlayout,      {0} },
-    { MODKEY,                    XKB_KEY_Tab,                   view,           {0} },
+    /* modificador               tecla                          funcion           argumento */
+    { MODKEY,                    XKB_KEY_d,                     spawn,            {.v = dmenucmd } },
+    { MODKEY,                    XKB_KEY_p,                     spawn,            {.v = dmenucmd } },
+    { MODKEY,                    XKB_KEY_Return,                spawn,            {.v = termcmd } },
+    { MODKEY,                    XKB_KEY_t,                     spawn,            {.v = termcmd } },
+    { MODKEY,                    XKB_KEY_b,                     spawn,            {.v = browsercmd } },
+    { MODKEY,                    XKB_KEY_e,                     spawn,            {.v = lfcmd } },
+    { MODKEY,                    XKB_KEY_q,                     killclient,       {0} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_C,                     killclient,       {0} },
+
+    /* Layouts */
+    { MODKEY,                    XKB_KEY_r,                     setlayout,        {.v = &layouts[0]} },
+    { MODKEY,                    XKB_KEY_v,                     setlayout,        {.v = &layouts[1]} },
+    { MODKEY,                    XKB_KEY_m,                     setlayout,        {.v = &layouts[2]} },
+    { MODKEY,                    XKB_KEY_space,                 setlayout,        {0} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_space,                 togglefloating,   {0} },
+    { MODKEY,                    XKB_KEY_f,                     togglefullscreen, {0} },
+
+    /* Foco y tamanos */
+    { MODKEY,                    XKB_KEY_j,                     focusstack,       {.i = +1 } },
+    { MODKEY,                    XKB_KEY_k,                     focusstack,       {.i = -1 } },
+    { MODKEY,                    XKB_KEY_h,                     setmfact,         {.f = -0.05f} },
+    { MODKEY,                    XKB_KEY_l,                     setmfact,         {.f = +0.05f} },
+    { MODKEY,                    XKB_KEY_i,                     incnmaster,       {.i = +1 } },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_I,                     incnmaster,       {.i = -1 } },
+    { MODKEY,                    XKB_KEY_z,                     zoom,             {0} },
+    { MODKEY,                    XKB_KEY_Tab,                   view,             {0} },
+    { MODKEY,                    XKB_KEY_0,                     view,             {.ui = ~0} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_equal,                 tag,              {.ui = ~0} },
+
+    /* Varios monitores */
+    { MODKEY,                    XKB_KEY_comma,                 focusmon,         {.i = WLR_DIRECTION_LEFT} },
+    { MODKEY,                    XKB_KEY_period,                focusmon,         {.i = WLR_DIRECTION_RIGHT} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_less,                  tagmon,           {.i = WLR_DIRECTION_LEFT} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_greater,               tagmon,           {.i = WLR_DIRECTION_RIGHT} },
 
     /* Barra dwlb: Super+s la oculta/muestra, Super+Shift+S la manda abajo/arriba */
-    { MODKEY,                    XKB_KEY_s,                     spawn,          {.v = bartoggle } },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_S,                     spawn,          {.v = barmove } },
+    { MODKEY,                    XKB_KEY_s,                     spawn,            {.v = bartoggle } },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_S,                     spawn,            {.v = barmove } },
 
-    { 0,                         XKB_KEY_XF86AudioRaiseVolume,  spawn,          {.v = upvol } },
-    { 0,                         XKB_KEY_XF86AudioLowerVolume,  spawn,          {.v = downvol } },
-    { 0,                         XKB_KEY_XF86AudioMute,         spawn,          {.v = mutevol } },
-    { 0,                         XKB_KEY_XF86MonBrightnessUp,   spawn,          {.v = brup } },
-    { 0,                         XKB_KEY_XF86MonBrightnessDown, spawn,          {.v = brdown } },
-    { 0,                         XKB_KEY_Print,                 spawn,          {.v = screenshot } },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_E,                     quit,           {0} },
+    /* Teclas multimedia */
+    { 0,                         XKB_KEY_XF86AudioRaiseVolume,  spawn,            {.v = upvol } },
+    { 0,                         XKB_KEY_XF86AudioLowerVolume,  spawn,            {.v = downvol } },
+    { 0,                         XKB_KEY_XF86AudioMute,         spawn,            {.v = mutevol } },
+    { 0,                         XKB_KEY_XF86MonBrightnessUp,   spawn,            {.v = brup } },
+    { 0,                         XKB_KEY_XF86MonBrightnessDown, spawn,            {.v = brdown } },
+    { 0,                         XKB_KEY_Print,                 spawn,            {.v = screenshot } },
 
     TAGKEYS(          XKB_KEY_1, XKB_KEY_exclam,                     0),
     TAGKEYS(          XKB_KEY_2, XKB_KEY_quotedbl,                   1),
@@ -965,12 +1036,29 @@ static const Key keys[] = {
     TAGKEYS(          XKB_KEY_7, XKB_KEY_slash,                      6),
     TAGKEYS(          XKB_KEY_8, XKB_KEY_parenleft,                  7),
     TAGKEYS(          XKB_KEY_9, XKB_KEY_parenright,                 8),
+
+    /* Salir de dwl */
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_Q,                     quit,             {0} },
+    { WLR_MODIFIER_CTRL|WLR_MODIFIER_ALT, XKB_KEY_BackSpace,    quit,             {0} },
+
+    /* Ctrl+Alt+Fx para cambiar de VT (tty). NO los borres o te quedas sin
+     * forma de salir a una consola si dwl se cuelga. */
+#define CHVT(n) { WLR_MODIFIER_CTRL|WLR_MODIFIER_ALT,XKB_KEY_F##n, chvt, {.ui = (n)} }
+    CHVT(1), CHVT(2), CHVT(3), CHVT(4),  CHVT(5),  CHVT(6),
+    CHVT(7), CHVT(8), CHVT(9), CHVT(10), CHVT(11), CHVT(12),
 };
 
+/* Raton: moveresize sustituye a los antiguos movemouse/resizemouse */
 static const Button buttons[] = {
-    { MODKEY, Button1, movemouse,      {0} },
-    { MODKEY, Button2, togglefloating, {0} },
-    { MODKEY, Button3, resizemouse,    {0} },
+    { MODKEY, BTN_LEFT,   moveresize,     {.ui = CurMove} },
+    { MODKEY, BTN_MIDDLE, togglefloating, {0} },
+    { MODKEY, BTN_RIGHT,  moveresize,     {.ui = CurResize} },
+};
+
+/* Rueda del raton. El array no puede quedar vacio. */
+static const Axis axes[] = {
+    { MODKEY, AxisUp,   spawn, {.v = upvol} },
+    { MODKEY, AxisDown, spawn, {.v = downvol} },
 };
 EOF
         info "config.h escrito con layout '$KB_XKB'."
