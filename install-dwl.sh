@@ -1,12 +1,18 @@
 #!/bin/sh
-# install-dwl-v0.8.0.sh v0.8.0
+# install-dwl-v0.9.0.sh v0.9.0
 # Instalador de dwl (dwm para Wayland) para VOID LINUX.
 #
 # Modos:
-#   1) Basico:   dwl + barra externa, foot, wmenu, swaybg, pipewire
+#   1) Basico:   dwl + dwlb, foot, wmenu, swaybg, pipewire
 #   2) Completo: basico + Steam, drivers de GPU (incluido hibridas/Optimus)
-# Kernel: ofrece el paquete linux7.x mas reciente solo si XBPS lo encuentra;
-# por defecto conserva el kernel actual y, si se elige, instala 7.x en paralelo.
+#
+# CAMBIO v0.9.0: la barra ya no es dwl-bar (MadcowOG) sino dwlb, de kolunmi:
+#   https://github.com/kolunmi/dwlb
+# dwlb trae colores configurables, texto de estado con comandos en linea
+# (^fg ^bg ^lm ...), regiones clicables, ocultar tags vacios, escalado HiDPI
+# y control remoto (dwlb -toggle-visibility all, etc.). Se instala tambien su
+# pagina de manual (man 1 dwlb) y un archivo de configuracion propio en
+# ~/.config/dwlb/config, mas un generador de estado en dwlb-status.
 #
 # GESTOR DE INICIO: greetd + tuigreet (unico). lightdm se elimino por completo.
 #
@@ -130,10 +136,24 @@ fi
 # 0c. Variables de configuracion
 # ----------------------------------------------------------------
 DWL_REPO="https://codeberg.org/dwl/dwl.git"
-DWLBAR_REPO="https://github.com/MadcowOG/dwl-bar.git"
+# Barra: dwlb, de kolunmi (repositorio personal de su autor).
+DWLB_REPO="https://github.com/kolunmi/dwlb.git"
 WALLPAPER_DIR="$HOME/Pictures"
 WALLPAPER_PATH="$WALLPAPER_DIR/wallpaper.jpg"
 WALLPAPER_URL="https://wallpapercave.com/download/empty-error-wallpapers-wp8330753"
+
+# Apariencia de dwlb (paleta Catppuccin Mocha, igual que config.h de dwl)
+DWLB_FONT="${DWLB_FONT:-monospace:size=11}"
+DWLB_PAD="${DWLB_PAD:-2}"
+DWLB_ACTIVE_FG="#ffffff"
+DWLB_ACTIVE_BG="#89b4fa"
+DWLB_OCCUPIED_FG="#cdd6f4"
+DWLB_OCCUPIED_BG="#313244"
+DWLB_INACTIVE_FG="#a6adc8"
+DWLB_INACTIVE_BG="#1e1e2e"
+DWLB_URGENT_FG="#1e1e2e"
+DWLB_URGENT_BG="#f38ba8"
+DWLB_MIDDLE_BG="#1e1e2e"
 
 # VT de greetd (Void parchea greetd para usar la 7: las tty 1-6 tienen agetty)
 GREETD_VT="${GREETD_VT:-7}"
@@ -146,19 +166,18 @@ if [ "$GREETD_VT" -lt 1 ] || [ "$GREETD_VT" -gt 12 ]; then
 fi
 # Usuario del sistema que ejecuta el greeter en Void (lo crea el paquete greetd)
 GREETER_USER="_greeter"
-# Barra a usar: dwl-bar (por defecto) o waybar
-BARRA="${BARRA:-dwl-bar}"
 
 # ==================================================================
 # MENU DE SELECCION
 # ==================================================================
 echo "=========================================="
-echo "    Instalador dwl (Void Linux) v0.8.0"
+echo "    Instalador dwl (Void Linux) v0.9.0"
 echo "=========================================="
+echo "Barra: dwlb (https://github.com/kolunmi/dwlb)"
 echo "Gestor de inicio: greetd + tuigreet"
 echo "(si tenias lightdm, se desactivara y desinstalara)"
 echo
-echo "1) Instalacion BASICA (dwl + barra, foot, wmenu, swaybg)"
+echo "1) Instalacion BASICA (dwl + dwlb, foot, wmenu, swaybg)"
 echo "2) Instalacion COMPLETA (basica + Steam y drivers de GPU)"
 echo "3) Salir"
 printf "Opcion [1-3]: "
@@ -173,9 +192,6 @@ esac
 # ==================================================================
 # FUNCION: detectar TODAS las GPUs (incluidas las hibridas / Optimus)
 # ==================================================================
-# Antes solo se miraba la primera linea del lspci, asi que en un portatil con
-# Intel + NVIDIA se instalaban unicamente los drivers de Intel y la NVIDIA
-# quedaba muerta. Aqui se recogen todos los vendors presentes.
 detectar_gpus() {
     if ! command -v lspci >/dev/null 2>&1; then
         info "Instalando pciutils para detectar las GPU..."
@@ -189,9 +205,6 @@ detectar_gpus() {
     GPU_LISTA=$(lspci -nn | grep -iE 'vga|3d controller|display controller' || true)
     GPU_VENDORS=""
 
-    # Se prefieren los identificadores PCI (10de NVIDIA, 1002 AMD, 8086 Intel).
-    # El respaldo textual usa limites de caracteres: evita que 'ati' coincida
-    # dentro de 'Corporation' y que el fabricante dependa del idioma de lspci.
     if printf '%s' "$GPU_LISTA" | grep -qiE '\[10de:[[:xdigit:]]{4}\]|(^|[^[:alnum:]])NVIDIA([^[:alnum:]]|$)'; then
         GPU_VENDORS="$GPU_VENDORS nvidia"
     fi
@@ -263,19 +276,15 @@ instalar_drivers_gpu() {
         esac
     done
 
-    # --- Equipos hibridos con NVIDIA (Intel/AMD + NVIDIA = PRIME) ----------
     if [ "$GPU_HIBRIDA_NVIDIA" -eq 1 ]; then
         info "Configurando arranque en GPU dedicada bajo demanda (PRIME)..."
-
-        # Void NO tiene el paquete nvidia-prime, asi que creamos prime-run.
-        # Son las mismas variables que usa el prime-run de Arch.
         info "Creando /usr/local/bin/prime-run (Void no trae nvidia-prime)..."
         sudo tee /usr/local/bin/prime-run >/dev/null <<'EOF'
 #!/bin/sh
 # prime-run: ejecuta una aplicacion usando la GPU NVIDIA en equipos hibridos.
 #   prime-run steam
 #   prime-run mpv video.mkv
-# Creado por install-dwl-v0.8.0.sh porque Void no empaqueta nvidia-prime.
+# Creado por install-dwl-v0.9.0.sh porque Void no empaqueta nvidia-prime.
 export __NV_PRIME_RENDER_OFFLOAD=1
 export __NV_PRIME_RENDER_OFFLOAD_PROVIDER=NVIDIA-G0
 export __GLX_VENDOR_LIBRARY_NAME=nvidia
@@ -292,113 +301,198 @@ EOF
 }
 
 # ==================================================================
-# FUNCION: barra externa (dwl-bar con Waybar como respaldo)
+# FUNCION: barra dwlb (repositorio de kolunmi)
 # ==================================================================
 # dwl -s <cmd> arranca <cmd> cuando el compositor ya esta listo y le envia el
-# estado (tags, titulo, layout) por su entrada estandar.
-compilar_dwl_bar() {
+# estado (tags, titulo, layout) por su entrada estandar. dwlb lee ese stdin
+# salvo que se compile dwl con el parche IPC y se use -ipc.
+#
+# Dependencias de dwlb (README del autor):
+#   libwayland-client, libwayland-cursor, pixman, fcft
+compilar_dwlb() {
+    info "Instalando dependencias de dwlb (pixman, fcft, tllist)..."
+    if ! sudo xbps-install -Sy pixman pixman-devel fcft fcft-devel tllist \
+            freetype-devel fontconfig-devel harfbuzz-devel utf8proc-devel; then
+        warn "Alguna dependencia de dwlb fallo; intento compilar de todas formas."
+    fi
+
     cd "$HOME" || return 1
-    [ -d dwl-bar ] || git clone "$DWLBAR_REPO" || return 1
-    cd "$HOME/dwl-bar" || return 1
+    if [ -d dwlb ]; then
+        info "Ya existe ~/dwlb: se reutiliza el clon existente."
+    else
+        info "Clonando dwlb desde $DWLB_REPO ..."
+        git clone "$DWLB_REPO" || return 1
+    fi
+    cd "$HOME/dwlb" || return 1
     fix_owner || return 1
 
-    # --- Parche de compatibilidad layer-shell --------------------------
-    # dwl-bar pide SIEMPRE la version 4 de zwlr_layer_shell_v1, pero la que
-    # anuncia dwl depende de wlroots (0.18 -> 3, 0.19/0.20 -> 5). Si anuncia
-    # menos de 4 el bind falla y la barra no aparece:
+    # --- config.h propio de dwlb ---------------------------------------
+    # dwlb usa el estilo suckless: config.def.h -> config.h. Aqui se dejan
+    # los valores por defecto del binario; el ajuste fino se hace luego en
+    # ~/.config/dwlb/config, que NO obliga a recompilar.
+    if [ -f config.def.h ] && [ ! -f config.h ]; then
+        cp config.def.h config.h
+        info "Creado ~/dwlb/config.h a partir de config.def.h."
+    fi
+
+    # --- Parche de compatibilidad layer-shell (por si acaso) -----------
+    # Si una version futura de dwlb exigiera una version de zwlr_layer_shell_v1
+    # mayor que la que anuncia el wlroots de Void, el bind fallaria con:
     #   "invalid version for global zwlr_layer_shell_v1: have 3, wanted 4"
-    # (issue #14 de dwl-bar). Lo de las v4/v5 solo anade "keyboard interactivity
-    # on demand", que dwl-bar no usa, asi que bajar a la version anunciada es
-    # seguro.
-    if grep -q 'zwlr_layer_shell_v1_interface, 4)' src/main.c; then
-        if ! sed -i 's|&zwlr_layer_shell_v1_interface, 4)|\&zwlr_layer_shell_v1_interface, (version < 4 ? version : 4))|' src/main.c; then
-            error "No pude aplicar el parche layer-shell a dwl-bar."
-            return 1
+    # Se ata la peticion a la version realmente anunciada.
+    if grep -qE 'zwlr_layer_shell_v1_interface, [0-9]+\)' dwlb.c 2>/dev/null; then
+        DWLB_LS_VER=$(grep -oE 'zwlr_layer_shell_v1_interface, [0-9]+\)' dwlb.c | head -n1 | grep -oE '[0-9]+')
+        if [ -n "$DWLB_LS_VER" ] && [ "$DWLB_LS_VER" -gt 1 ]; then
+            sed -i "s|&zwlr_layer_shell_v1_interface, $DWLB_LS_VER)|\&zwlr_layer_shell_v1_interface, (version < $DWLB_LS_VER ? version : $DWLB_LS_VER))|" dwlb.c || \
+                warn "No pude aplicar el parche layer-shell a dwlb; sigo igualmente."
+            info "Parche layer-shell aplicado a dwlb (pide como mucho la version $DWLB_LS_VER)."
         fi
-        if grep -q 'zwlr_layer_shell_v1_interface, 4)' src/main.c; then
-            error "La linea layer-shell de dwl-bar sigue sin parchear."
-            return 1
-        fi
-        info "Parche layer-shell aplicado a dwl-bar (usa la version que anuncie dwl)."
     fi
 
     make clean 2>/dev/null || true
-    make || return 1
+    if ! make; then
+        error "Fallo la compilacion de dwlb. Revisa que pixman-devel y fcft-devel esten instalados."
+        return 1
+    fi
     sudo make install || return 1
-    return 0
-}
 
-instalar_waybar() {
-    info "Instalando Waybar desde los repositorios de Void..."
-    sudo xbps-install -Sy Waybar || return 1
+    # Pagina de manual: el Makefile suele instalarla, pero si no, se copia.
+    if [ -f dwlb.1 ] && ! command -v man >/dev/null 2>&1; then
+        :
+    elif [ -f dwlb.1 ] && [ ! -f /usr/local/share/man/man1/dwlb.1 ]; then
+        sudo mkdir -p /usr/local/share/man/man1
+        sudo cp dwlb.1 /usr/local/share/man/man1/dwlb.1
+        info "Manual instalado: consulta 'man 1 dwlb'."
+    fi
 
-    mkdir -p "$HOME/.config/waybar" || return 1
-    write_config "$HOME/.config/waybar/config" <<'EOF' || return 1
-{
-    "layer": "top",
-    "position": "top",
-    "height": 28,
-    "spacing": 4,
-    "modules-left": ["clock"],
-    "modules-center": [],
-    "modules-right": ["cpu", "memory", "pulseaudio", "network", "battery"],
-    "clock": {
-        "format": "{:%H:%M  %d/%m/%Y}",
-        "tooltip-format": "{:%A, %d de %B de %Y}"
-    },
-    "cpu": {
-        "format": "CPU {usage}%",
-        "interval": 2
-    },
-    "memory": {
-        "format": "RAM {}%",
-        "interval": 5
-    },
-    "pulseaudio": {
-        "format": "VOL {volume}%",
-        "format-muted": "MUTE"
-    },
-    "network": {
-        "format-wifi": "{essid}",
-        "format-ethernet": "ETH",
-        "format-disconnected": "SIN RED"
-    },
-    "battery": {
-        "format": "BAT {capacity}%",
-        "format-charging": "BAT {capacity}% +"
+    command -v dwlb >/dev/null 2>&1 || {
+        error "dwlb no quedo en el PATH tras 'make install'."
+        return 1
     }
-}
-EOF
-
-    write_config "$HOME/.config/waybar/style.css" <<'EOF' || return 1
-* {
-    font-family: monospace;
-    font-size: 13px;
-    border: none;
-    border-radius: 0;
-}
-
-window#waybar {
-    background-color: #1a1b26;
-    color: #c0caf5;
-}
-
-#clock, #cpu, #memory, #pulseaudio, #network, #battery {
-    padding: 0 10px;
-    background-color: #24283b;
-    margin: 2px 1px;
-}
-
-#battery.charging {
-    color: #9ece6a;
-}
-
-#battery.critical:not(.charging) {
-    color: #f7768e;
-}
-EOF
-    info "Config de Waybar escrita en ~/.config/waybar/"
     return 0
+}
+
+# ==================================================================
+# FUNCION: configuracion de dwlb (~/.config/dwlb/config + estado)
+# ==================================================================
+configurar_dwlb() {
+    info "Escribiendo la configuracion de dwlb..."
+    mkdir -p "$HOME/.config/dwlb"
+
+    # dwlb lee $XDG_CONFIG_HOME/dwlb/config: son las MISMAS opciones de la
+    # linea de comandos, una por linea, sin el guion inicial obligatorio de
+    # agrupar. Cambiar aqui NO requiere recompilar: basta con reiniciar dwl.
+    write_config "$HOME/.config/dwlb/config" <<EOF
+# Configuracion de dwlb  (https://github.com/kolunmi/dwlb)
+# Generada por install-dwl-v0.9.0.sh
+# Una opcion por linea, tal cual se pasarian en la linea de comandos.
+# Referencia completa: man 1 dwlb
+
+-font $DWLB_FONT
+-vertical-padding $DWLB_PAD
+
+# Tags: oculta los vacios e inactivos para que la barra quede limpia.
+-hide-vacant-tags
+
+# El titulo de la ventana enfocada va centrado.
+-center-title
+
+# Permite ^fg() ^bg() ^lm() en el texto de estado (lo usa dwlb-status).
+-status-commands
+
+# Barra arriba y visible al iniciar.
+-no-bottom
+-no-hidden
+
+# Colores (Catppuccin Mocha)
+-active-fg-color $DWLB_ACTIVE_FG
+-active-bg-color $DWLB_ACTIVE_BG
+-occupied-fg-color $DWLB_OCCUPIED_FG
+-occupied-bg-color $DWLB_OCCUPIED_BG
+-inactive-fg-color $DWLB_INACTIVE_FG
+-inactive-bg-color $DWLB_INACTIVE_BG
+-urgent-fg-color $DWLB_URGENT_FG
+-urgent-bg-color $DWLB_URGENT_BG
+
+# HiDPI: descomenta si tu monitor usa escalado 2x (o 1.25/1.5 -> tambien 2).
+# -scale 2
+EOF
+
+    # --- Generador de texto de estado -----------------------------------
+    # Se alimenta a dwlb con:  dwlb-status | dwlb -status-stdin all
+    # Usa los comandos en linea de dwlb: ^fg(), ^bg(), ^lm() para clics.
+    info "Instalando 'dwlb-status' (texto de estado de la barra)..."
+    sudo tee /usr/local/bin/dwlb-status >/dev/null <<'EOF'
+#!/bin/sh
+# dwlb-status: imprime el texto de estado para dwlb, una linea por refresco.
+# Formato de dwlb: ^fg(RRGGBB) ^bg(RRGGBB) ^lm(comando) ... ^lm()
+# Consulta 'man 1 dwlb', seccion Commands.
+#
+# Se usa asi:   dwlb-status | dwlb -status-stdin all
+
+COLOR_ETIQ="89b4fa"   # azul  (etiquetas)
+COLOR_TXT="cdd6f4"    # texto normal
+COLOR_ALERTA="f38ba8" # rojo  (bateria baja)
+
+bloque_volumen() {
+    command -v wpctl >/dev/null 2>&1 || return 0
+    INFO=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null) || return 0
+    VOL=$(printf '%s' "$INFO" | awk '{printf "%d", $2 * 100}')
+    case "$INFO" in
+        *MUTED*) printf '^fg(%s)VOL^fg(%s) mudo' "$COLOR_ETIQ" "$COLOR_ALERTA" ;;
+        *)       printf '^fg(%s)VOL^fg(%s) %s%%' "$COLOR_ETIQ" "$COLOR_TXT" "$VOL" ;;
+    esac
+    printf '  '
+}
+
+bloque_bateria() {
+    for BAT in /sys/class/power_supply/BAT*; do
+        [ -r "$BAT/capacity" ] || continue
+        CAP=$(cat "$BAT/capacity")
+        EST=$(cat "$BAT/status" 2>/dev/null || echo Unknown)
+        case "$EST" in
+            Charging) ICONO="+" ;;
+            Full)     ICONO="=" ;;
+            *)        ICONO="-" ;;
+        esac
+        if [ "$CAP" -le 15 ] && [ "$EST" != "Charging" ]; then
+            COLOR="$COLOR_ALERTA"
+        else
+            COLOR="$COLOR_TXT"
+        fi
+        printf '^fg(%s)BAT^fg(%s) %s%s%%  ' "$COLOR_ETIQ" "$COLOR" "$ICONO" "$CAP"
+        break
+    done
+}
+
+bloque_cpu() {
+    [ -r /proc/loadavg ] || return 0
+    printf '^fg(%s)CPU^fg(%s) %s  ' "$COLOR_ETIQ" "$COLOR_TXT" "$(cut -d' ' -f1 /proc/loadavg)"
+}
+
+bloque_ram() {
+    [ -r /proc/meminfo ] || return 0
+    awk -v e="$COLOR_ETIQ" -v t="$COLOR_TXT" '
+        /^MemTotal:/     { total=$2 }
+        /^MemAvailable:/ { disp=$2 }
+        END { if (total) printf "^fg(%s)RAM^fg(%s) %.1fG  ", e, t, (total-disp)/1048576 }
+    ' /proc/meminfo
+}
+
+bloque_fecha() {
+    # Clic izquierdo sobre la hora: abre un calendario en foot.
+    printf '^lm(foot -e sh -c "cal -3; read x")^fg(%s)%s^fg()^lm()' \
+        "$COLOR_TXT" "$(date '+%a %d/%m  %H:%M')"
+}
+
+while :; do
+    printf '%s%s%s%s%s\n' \
+        "$(bloque_cpu)" "$(bloque_ram)" "$(bloque_volumen)" \
+        "$(bloque_bateria)" "$(bloque_fecha)"
+    sleep 5
+done
+EOF
+    sudo chmod +x /usr/local/bin/dwlb-status
 }
 
 # ==================================================================
@@ -406,7 +500,6 @@ EOF
 # ==================================================================
 configurar_greetd() {
 
-    # --- 0. Fuera lightdm (daba errores y no encaja con Wayland) ---------
     if [ -d /etc/sv/lightdm ] || command -v lightdm >/dev/null 2>&1; then
         info "Encontre lightdm instalado: lo quito (da errores y no se usa con greetd)."
         disable_svc lightdm
@@ -425,21 +518,15 @@ configurar_greetd() {
     info "Instalando greetd, tuigreet y turnstile..."
     sudo xbps-install -Sy greetd tuigreet turnstile
 
-    # --- 1. Comando de la sesion ----------------------------------------
     SESSION_CMD="/usr/local/bin/dwl-session"
     info "Comando de la sesion: $SESSION_CMD"
 
-    # --- 2. /etc/greetd/config.toml -------------------------------------
-    # Dos detalles de Void que te rompen el invento si los copias de Arch:
-    #   * el usuario del greeter es '_greeter' (con guion bajo)
-    #   * greetd ejecuta el comando con 'sh -c', asi que las comillas simples
-    #     de dentro del TOML funcionan como en cualquier terminal.
     sudo mkdir -p /etc/greetd
     backup_file /etc/greetd/config.toml
 
     sudo tee /etc/greetd/config.toml >/dev/null <<EOF
-# Generado por install-dwl-v0.8.0.sh (v0.8.0)
-# Documentacion: man 1 tuigreet   ·   https://github.com/tuigreet/tuigreet
+# Generado por install-dwl-v0.9.0.sh (v0.9.0)
+# Documentacion: man 1 tuigreet
 
 [terminal]
 # VT donde se muestra tuigreet. Void trae agetty en las tty 1-6,
@@ -455,18 +542,11 @@ user = "$GREETER_USER"
 EOF
     info "Escrito /etc/greetd/config.toml"
 
-    # --- 3. turnstile: XDG_RUNTIME_DIR ----------------------------------
-    # greetd NO crea /run/user/$UID; turnstile lo prepara mediante PAM.
-    # Sin el, pipewire y el socket de Wayland fallan.
-    # En Void, greetd tiene un archivo PAM propio en /etc/pam.d/greetd, que
-    # instala el paquete greetd SIN pam_turnstile.so (solo trae
-    # 'auth/account/session include system-local-login'), asi que hay que
-    # anadirlo a mano tras instalar el paquete turnstile.
     info "Configurando turnstile (prepara XDG_RUNTIME_DIR mediante PAM)..."
     enable_svc turnstiled || warn "turnstiled no esta disponible; dwl-session usara su directorio privado de respaldo."
 
     PAM_FILE="/etc/pam.d/greetd"
-    if [ -f /usr/lib/security/pam_turnstile.so ]; then
+    if [ -f /usr/lib/security/pam_turnstile.so ] || [ -f /usr/lib64/security/pam_turnstile.so ]; then
         if [ ! -f "$PAM_FILE" ]; then
             warn "No existe $PAM_FILE (el paquete greetd deberia haberlo creado)."
             warn "No puedo activar pam_turnstile automaticamente; revisa la instalacion de greetd."
@@ -474,9 +554,7 @@ EOF
             info "pam_turnstile ya estaba en $PAM_FILE."
         else
             backup_file "$PAM_FILE"
-            # Se agrega al final del archivo: el stack de greetd ya contiene
-            # una sesion; el modulo optional no altera el resultado de login.
-            printf '\n# Anadido por install-dwl-v0.8.0.sh para turnstile (XDG_RUNTIME_DIR)\nsession\toptional\tpam_turnstile.so\n' | \
+            printf '\n# Anadido por install-dwl-v0.9.0.sh para turnstile (XDG_RUNTIME_DIR)\nsession\toptional\tpam_turnstile.so\n' | \
                 sudo tee -a "$PAM_FILE" >/dev/null
             info "Anadido 'session optional pam_turnstile.so' a $PAM_FILE"
             warn "Si algo falla al iniciar sesion, restaura la copia .bak-* de $PAM_FILE."
@@ -486,14 +564,11 @@ EOF
         warn "Sin el, XDG_RUNTIME_DIR puede quedar vacio (el wrapper dwl-session tiene un plan B)."
     fi
 
-    # --- 4. Servicios ---------------------------------------------------
     if [ -L "/var/service/agetty-tty$GREETD_VT" ]; then
         warn "Habia un agetty en tty$GREETD_VT; lo quito para que greetd pueda usarla."
         disable_svc "agetty-tty$GREETD_VT"
     fi
 
-    # greetd se enlaza en runit, pero NO se arranca aquí.
-    # Se arranca al final del script, en iniciar_greetd().
     if [ ! -d /etc/sv/greetd ]; then
         error "El paquete greetd no creo /etc/sv/greetd; no habilito un servicio incompleto."
         return 1
@@ -517,7 +592,6 @@ iniciar_greetd() {
         enable_svc greetd || return 1
     fi
 
-
     info "Todo instalado: arrancando greetd..."
     if ! sudo sv start greetd; then
         error "runit no pudo iniciar greetd. Revisa con: sudo sv status greetd"
@@ -527,7 +601,7 @@ iniciar_greetd() {
     ESTADO_GREETD=$(sudo sv status greetd 2>&1 || true)
     case "$ESTADO_GREETD" in
         run:*) info "greetd activo: tienes tuigreet en la tty$GREETD_VT." ;;
-        *)     warn "runit no confirma que greetd esté activo: $ESTADO_GREETD" ;;
+        *)     warn "runit no confirma que greetd este activo: $ESTADO_GREETD" ;;
     esac
 }
 
@@ -537,7 +611,7 @@ iniciar_greetd() {
 instalar_base() {
 
     # --------------------------------------------------------
-    # 0. Kernel 7.x opcional: no reemplaza ni elimina el kernel actual
+    # 0. Kernel 7.x opcional
     # --------------------------------------------------------
     info "Kernel actualmente en uso: $(uname -r)"
     info "Buscando un paquete de kernel de la serie 7.x en los repositorios..."
@@ -580,10 +654,6 @@ instalar_base() {
     # --------------------------------------------------------
     # 1. Paquetes
     # --------------------------------------------------------
-    # No se instala el servidor Xorg completo: con lightdm hacia falta porque
-    # greeter se dibujaba sobre X11, pero tuigreet se dibuja en la consola.
-    # Basta con xorg-server-xwayland para las apps de X11 (Steam, juegos).
-    # Si lo quieres: sudo xbps-install -Sy xorg-server
     info "Instalando dependencias de dwl y del entorno Wayland..."
     if ! sudo xbps-install -Sy \
         base-devel file pkg-config \
@@ -595,6 +665,7 @@ instalar_base() {
         xorg-server-xwayland \
         mesa-dri libdrm-devel \
         pango-devel cairo-devel \
+        pixman pixman-devel fcft fcft-devel tllist \
         foot wmenu \
         pipewire wireplumber alsa-pipewire \
         swaybg swaylock grim slurp wl-clipboard \
@@ -614,10 +685,6 @@ instalar_base() {
     # --------------------------------------------------------
     # 2. Grupo de seatd: en Void es _seatd, NO seat
     # --------------------------------------------------------
-    # El paquete crea ese grupo y el servicio arranca con
-    #   exec /usr/bin/seatd -g _seatd
-    # asi que /run/seatd.sock pertenece a '_seatd'. Sin ese grupo, libseat no
-    # puede abrir el seat y dwl muere al arrancar.
     info "Configurando el grupo de seat para el usuario $REAL_USER..."
 
     if getent group _seatd >/dev/null 2>&1; then
@@ -634,8 +701,6 @@ instalar_base() {
         return 1
     fi
 
-    # El grupo video tambien se usa para acceso directo a dispositivos DRM y
-    # aceleracion; se agrega en ambos modos, no solo si Steam esta disponible.
     if getent group video >/dev/null 2>&1; then
         if sudo usermod -aG video "$REAL_USER"; then
             info "Usuario $REAL_USER agregado al grupo 'video'."
@@ -666,7 +731,7 @@ instalar_base() {
     # 4. Zona horaria
     # --------------------------------------------------------
     info "Configuracion de zona horaria."
-    printf "Escribe tu pais (ej: Colombia, Mexico, Argentina, España).\nDeja vacio para usar Colombia por defecto: "
+    printf "Escribe tu pais (ej: Colombia, Mexico, Argentina, Espana).\nDeja vacio para usar Colombia por defecto: "
     read -r PAIS_INPUT
     PAIS_INPUT="${PAIS_INPUT:-Colombia}"
 
@@ -735,7 +800,7 @@ instalar_base() {
     while true; do
         printf "Selecciona la distribucion de teclado:\n"
         printf "  1) Ingles (us)\n"
-        printf "  2) Español de España (es)\n"
+        printf "  2) Espanol de Espana (es)\n"
         printf "  3) Latinoamericano (latam)\n"
         printf "Opcion [3]: "
         read -r OPCION_TECLADO
@@ -768,14 +833,23 @@ instalar_base() {
     cd dwl
     fix_owner
 
+    # dwlb puede hablar por IPC solo si dwl trae el protocolo dwl-ipc-unstable.
+    if [ -f protocols/dwl-ipc-unstable-v2.xml ] || [ -f protocols/dwl-ipc-unstable-v1.xml ]; then
+        DWLB_IPC=1
+        info "dwl incluye el protocolo IPC: dwlb usara -ipc (clic en los tags funcional)."
+    else
+        DWLB_IPC=0
+        info "dwl sin parche IPC: dwlb leera el estado por stdin (-no-ipc)."
+    fi
+
     if [ -f config.h ]; then
         warn "config.h ya existe: se conserva tu version (no se sobreescribe)."
         warn "Si quieres regenerarlo, borra ~/dwl/config.h y vuelve a ejecutar."
     else
-        info "Escribiendo config.h personalizado (atajos, volumen, brillo, screenshot)..."
+        info "Escribiendo config.h personalizado (atajos, volumen, brillo, screenshot, barra)..."
 
         cat > config.h <<EOF
-/* Configuracion de dwl generada por install-dwl-v0.8.0.sh
+/* Configuracion de dwl generada por install-dwl-v0.9.0.sh
  * Personaliza este archivo y aplica cambios con: dwl-rebuild
  */
 #include <xkbcommon/xkbcommon-keysyms.h>
@@ -847,6 +921,9 @@ static const char *brup[]       = { "brightnessctl", "set", "+5%", NULL };
 static const char *brdown[]     = { "brightnessctl", "set", "5%-", NULL };
 static const char *screenshot[] = { "sh", "-c", "grim ~/Pictures/\$(date +'%Y-%m-%d_%H-%M-%S').png", NULL };
 static const char *lfcmd[]      = { "foot", "-e", "lf", NULL };
+/* Control remoto de la barra dwlb (man 1 dwlb, seccion Commands) */
+static const char *bartoggle[]  = { "dwlb", "-toggle-visibility", "all", NULL };
+static const char *barmove[]    = { "dwlb", "-toggle-location", "all", NULL };
 
 static const Key keys[] = {
     /* modifier                  key                            function        argument */
@@ -866,6 +943,10 @@ static const Key keys[] = {
     { MODKEY,                    XKB_KEY_i,                     incnmaster,     {.i = +1 } },
     { MODKEY,                    XKB_KEY_space,                 setlayout,      {0} },
     { MODKEY,                    XKB_KEY_Tab,                   view,           {0} },
+
+    /* Barra dwlb: Super+s la oculta/muestra, Super+Shift+S la manda abajo/arriba */
+    { MODKEY,                    XKB_KEY_s,                     spawn,          {.v = bartoggle } },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_S,                     spawn,          {.v = barmove } },
 
     { 0,                         XKB_KEY_XF86AudioRaiseVolume,  spawn,          {.v = upvol } },
     { 0,                         XKB_KEY_XF86AudioLowerVolume,  spawn,          {.v = downvol } },
@@ -901,42 +982,33 @@ EOF
     sudo make install
 
     # --------------------------------------------------------
-    # 7. Barra externa (dwl no trae barra propia)
+    # 7. Barra dwlb (dwl no trae barra propia)
     # --------------------------------------------------------
     BARRA_ELEGIDA=""
-    if [ "$BARRA" = "waybar" ]; then
-        if instalar_waybar; then BARRA_ELEGIDA="waybar"; fi
+    if compilar_dwlb; then
+        BARRA_ELEGIDA="dwlb"
+        configurar_dwlb
     else
-        if compilar_dwl_bar; then
-            BARRA_ELEGIDA="dwl-bar"
-        else
-            error "dwl-bar no compilo. Cayo a Waybar (esta en los repos de Void)."
-            if instalar_waybar; then BARRA_ELEGIDA="waybar"; fi
-        fi
+        error "dwlb no compilo. La sesion arrancara sin barra."
     fi
 
+    if [ "$BARRA_ELEGIDA" = "dwlb" ] && [ "${DWLB_IPC:-0}" -eq 1 ]; then
+        DWLB_MODO="-ipc"
+    else
+        DWLB_MODO="-no-ipc"
+    fi
+
+    BARRA_CMD="dwl -s /usr/local/bin/dwl-status-runner"
     case "$BARRA_ELEGIDA" in
-        dwl-bar)
-            BARRA_CMD="dwl -s /usr/local/bin/dwl-status-runner"
-            info "Barra: dwl-bar; el supervisor gestiona el stdin de estado y el wallpaper."
-            ;;
-        waybar)
-            BARRA_CMD="dwl -s /usr/local/bin/dwl-status-runner"
-            info "Barra: Waybar."
-            warn "Waybar muestra reloj/bateria/CPU, pero NO las etiquetas (tags) de dwl:"
-            warn "su modulo dwl/tags exige parchear dwl con el IPC patch."
-            ;;
-        *)
-            BARRA_CMD="dwl -s /usr/local/bin/dwl-status-runner"
-            warn "No hay barra instalada; el supervisor consumira el estado de dwl sin dibujar una barra."
-            ;;
+        dwlb) info "Barra: dwlb ($DWLB_MODO); el supervisor gestiona stdin, el estado y el wallpaper." ;;
+        *)    warn "No hay barra instalada; el supervisor consumira el estado de dwl sin dibujar una barra." ;;
     esac
 
     info "Instalando el supervisor de barra y wallpaper..."
     sudo tee /usr/local/bin/dwl-status-runner >/dev/null <<'EOF'
 #!/bin/sh
 # Arrancado por dwl -s cuando el compositor ya esta listo.
-# En dwl-bar pasa stdin a la barra; en Waybar drena el estado para no bloquear dwl.
+# Con dwlb en modo stdin, le pasa la tuberia de estado de dwl.
 # dash manda stdin de los procesos en segundo plano a /dev/null salvo que se
 # duplique a otro descriptor antes; el descriptor 3 conserva la tuberia de dwl.
 exec 3<&0 || exit 1
@@ -965,17 +1037,27 @@ if [ -n "$DWL_WALLPAPER" ] && [ -f "$DWL_WALLPAPER" ] && command -v swaybg >/dev
 fi
 
 case "$DWL_BAR_KIND" in
-    dwl-bar)
-        dwl-bar <&3 &
+    dwlb)
+        # dwlb lee su configuracion de ~/.config/dwlb/config; aqui solo se
+        # decide el modo (ipc o stdin), que depende de como se compilo dwl.
+        if [ "$DWL_BAR_MODE" = "-ipc" ]; then
+            # Con IPC dwlb no usa stdin: hay que consumir la tuberia igual,
+            # o dwl se bloquea al escribir el estado.
+            cat <&3 >/dev/null &
+            HIJOS="$HIJOS $!"
+            dwlb -ipc </dev/null &
+        else
+            dwlb -no-ipc <&3 &
+        fi
         PID_BARRA=$!
         HIJOS="$HIJOS $PID_BARRA"
-        ;;
-    waybar)
-        cat <&3 >/dev/null &
-        HIJOS="$HIJOS $!"
-        waybar </dev/null &
-        PID_BARRA=$!
-        HIJOS="$HIJOS $PID_BARRA"
+
+        # Texto de estado (CPU, RAM, volumen, bateria, reloj).
+        if command -v dwlb-status >/dev/null 2>&1; then
+            sleep 1
+            ( dwlb-status | dwlb -status-stdin all ) </dev/null >/dev/null 2>&1 &
+            HIJOS="$HIJOS $!"
+        fi
         ;;
     *)
         cat <&3 >/dev/null &
@@ -993,7 +1075,7 @@ EOF
     sudo chmod +x /usr/local/bin/dwl-status-runner
 
     # --------------------------------------------------------
-    # 9. lf (navegador de archivos)
+    # 8. lf (navegador de archivos)
     # --------------------------------------------------------
     info "Configurando lf..."
     mkdir -p "$HOME/.config/lf"
@@ -1017,7 +1099,7 @@ cmd open ${{
 EOF
 
     # --------------------------------------------------------
-    # 10. Wallpaper
+    # 9. Wallpaper
     # --------------------------------------------------------
     mkdir -p "$WALLPAPER_DIR"
     if [ ! -f "$WALLPAPER_PATH" ]; then
@@ -1034,7 +1116,7 @@ EOF
     fi
 
     # --------------------------------------------------------
-    # 11. Wrapper de sesion (lo ejecuta greetd/tuigreet)
+    # 10. Wrapper de sesion (lo ejecuta greetd/tuigreet)
     # --------------------------------------------------------
     info "Creando el wrapper de sesion..."
     sudo tee /usr/local/bin/dwl-session >/dev/null <<EOF
@@ -1048,6 +1130,7 @@ export MOZ_ENABLE_WAYLAND=1
 export QT_QPA_PLATFORM=wayland
 export GDK_BACKEND=wayland,x11
 export DWL_BAR_KIND="$BARRA_ELEGIDA"
+export DWL_BAR_MODE="$DWLB_MODO"
 export DWL_WALLPAPER="$WALLPAPER_PATH"
 
 # XDG_RUNTIME_DIR lo crea turnstiled por PAM. Si no existe o no pertenece a
@@ -1128,7 +1211,7 @@ iniciar_daemon_usuario pipewire pipewire
 iniciar_daemon_usuario wireplumber wireplumber
 iniciar_daemon_usuario pipewire-pulse pipewire-pulse
 
-# dwl-status-runner inicia swaybg cuando el socket Wayland ya esta disponible.
+# dwl-status-runner inicia dwlb y swaybg cuando el socket Wayland ya existe.
 $BARRA_CMD &
 DWL_PID=\$!
 wait "\$DWL_PID"
@@ -1141,20 +1224,16 @@ EOF
     sudo chmod +x /usr/local/bin/dwl-session
 
     # --- Ajustes segun el hardware detectado ----------------------------
-    # NVIDIA propietario + wlroots: sin esto el cursor puede no verse.
     if printf '%s' "$GPU_VENDORS" | grep -q nvidia; then
         info "GPU NVIDIA: anadiendo WLR_NO_HARDWARE_CURSORS=1 al wrapper."
         sudo sed -i 's|^dwl |export WLR_NO_HARDWARE_CURSORS=1\ndwl |' /usr/local/bin/dwl-session
     fi
 
-    # Hibridas: WLR_DRM_DEVICES se deja comentado porque el orden correcto de
-    # las tarjetas depende de cada equipo y un valor mal puesto deja la
-    # pantalla en negro. Se imprime tal cual para que solo haya que descomentar.
     if [ "$GPU_HIBRIDA" -eq 1 ] && [ -n "$GPU_CARDS" ]; then
         sudo sed -i "s|^dwl |# HIBRIDA: si arranca en pantalla negra, descomenta la linea siguiente:\n# export WLR_DRM_DEVICES=$GPU_CARDS\ndwl |" /usr/local/bin/dwl-session
     fi
 
-    info "Instalando el comando 'dwl-rebuild'..."
+    info "Instalando los comandos 'dwl-rebuild' y 'dwlb-rebuild'..."
     sudo tee /usr/local/bin/dwl-rebuild >/dev/null <<'EOF'
 #!/bin/sh
 set -e
@@ -1166,8 +1245,23 @@ echo "Listo. Cierra sesion y vuelve a entrar para aplicar los cambios de dwl."
 EOF
     sudo chmod +x /usr/local/bin/dwl-rebuild
 
+    sudo tee /usr/local/bin/dwlb-rebuild >/dev/null <<'EOF'
+#!/bin/sh
+# Recompila la barra dwlb (solo hace falta si editas ~/dwlb/config.h o
+# actualizas el repo). Para cambiar colores/fuente basta editar
+# ~/.config/dwlb/config y reiniciar la sesion: no requiere compilar.
+set -e
+cd "$HOME/dwlb"
+git pull --ff-only || echo "Aviso: no se pudo actualizar desde git; compilo lo que hay."
+make clean
+make
+sudo make install
+echo "Listo. Reinicia la sesion de dwl para ver la barra nueva."
+EOF
+    sudo chmod +x /usr/local/bin/dwlb-rebuild
+
     # --------------------------------------------------------
-    # 12. Sesion Wayland (la lee el menu F3 de tuigreet)
+    # 11. Sesion Wayland (la lee el menu F3 de tuigreet)
     # --------------------------------------------------------
     info "Registrando la sesion dwl en /usr/share/wayland-sessions..."
     sudo mkdir -p /usr/share/wayland-sessions
@@ -1190,23 +1284,12 @@ instalar_gaming() {
 
     GAMING_USER=$(id -un)
 
-    # --------------------------------------------------------
-    # 1. Repositorios PRIMERO, en su propia transaccion
-    # --------------------------------------------------------
-    # steam vive en el repo *nonfree* y sus librerias de 32 bits en *multilib*.
-    # Si los repos se instalan en la MISMA orden que los paquetes que dependen
-    # de ellos, xbps sincroniza el indice antes de que existan y luego no
-    # encuentra steam. Tres pasos, tal cual dice el README.voidlinux de steam:
-    #   # xbps-install -S void-repo-multilib{,-nonfree}
-    #   # xbps-install -S
     info "Habilitando repositorios nonfree y multilib..."
     sudo xbps-install -Sy void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree
 
     info "Resincronizando los indices de los repositorios nuevos..."
     sudo xbps-install -Sy || warn "La resincronizacion fallo; puede que steam no aparezca."
 
-    # Los drivers pertenecen al modo completo aunque Steam no figure en el
-    # indice (por ejemplo, si el espejo de repositorios aun no esta disponible).
     instalar_drivers_gpu
 
     STEAM_VER=$(xbps-query -R -p version steam 2>/dev/null || true)
@@ -1218,11 +1301,6 @@ instalar_gaming() {
     fi
     info "Steam localizado en los repositorios: $STEAM_VER"
 
-    # --------------------------------------------------------
-    # 2. Librerias de 32 bits que pide Steam en x86_64
-    # --------------------------------------------------------
-    # Steam es un binario de 32 bits: sin estas librerias se instala pero no
-    # arranca. Lista oficial de /usr/share/doc/steam/README.voidlinux.
     STEAM_32="libgcc-32bit libstdc++-32bit libdrm-32bit libglvnd-32bit libva-32bit"
     case " $GPU_VENDORS " in
         *" nvidia "*) STEAM_32="$STEAM_32 nvidia-libs-32bit" ;;
@@ -1234,12 +1312,6 @@ instalar_gaming() {
     sudo xbps-install -Sy $STEAM_32 || \
         warn "Alguna libreria de 32 bits fallo. Repitelo a mano: sudo xbps-install -S $STEAM_32"
 
-    # --------------------------------------------------------
-    # 3. Steam (SOLO en su transaccion)
-    # --------------------------------------------------------
-    # En xbps, si un paquete de la lista falla se cancela TODA la instalacion.
-    # Antes steam iba junto a gamemode y gamescope: si uno fallaba, steam no
-    # se instalaba. Ahora cada uno va por separado.
     info "Instalando Steam..."
     if ! sudo xbps-install -Sy steam; then
         error "Steam no se pudo instalar. Comprueba:"
@@ -1249,25 +1321,16 @@ instalar_gaming() {
         return 0
     fi
 
-    # --------------------------------------------------------
-    # 4. Extras, cada uno en su transaccion
-    # --------------------------------------------------------
     info "Instalando gamemode, gamescope y mono (opcionales)..."
     sudo xbps-install -Sy gamemode  || warn "gamemode no se instalo (opcional; no afecta a Steam)."
     sudo xbps-install -Sy gamescope || warn "gamescope no se instalo (opcional; no afecta a Steam)."
     sudo xbps-install -Sy mono      || warn "mono no se instalo (opcional; algunos juegos lo piden)."
 
-    # --------------------------------------------------------
-    # 5. Ajustes para Proton / SteamPlay
-    # --------------------------------------------------------
-    # Proton abre muchisimos descriptores de fichero: con el limite por defecto
-    # los juegos mueren con "eventfd: Too many open files".
     info "Subiendo el limite de ficheros abiertos (lo pide Proton)..."
     sudo mkdir -p /etc/security/limits.d
     printf '* soft nofile 524288\n* hard nofile 524288\n' | \
         sudo tee /etc/security/limits.d/00-steam-proton.conf >/dev/null
 
-    # Steam y la aceleracion por hardware necesitan el grupo video.
     if sudo usermod -aG video "$GAMING_USER" 2>/dev/null; then
         info "Usuario $GAMING_USER anadido al grupo 'video' (lo pide Steam)."
     else
@@ -1275,7 +1338,6 @@ instalar_gaming() {
         warn "Hazlo a mano: sudo usermod -aG video $GAMING_USER"
     fi
 
-    # dbus tiene que estar levantado o Steam no arranca.
     enable_svc dbus
 
     info "Steam corre sobre XWayland automaticamente."
@@ -1307,19 +1369,26 @@ fi
 iniciar_greetd
 
 info "=========================================="
-info " ¡Instalación de DWL completada con éxito!"
+info " Instalacion de DWL completada con exito!"
 info "=========================================="
-info "En la pantalla de tuigreet escribe tu usuario y contraseña."
+info "En la pantalla de tuigreet escribe tu usuario y contrasena."
 info "  F2  = cambiar el comando de la sesion"
 info "  F3  = elegir otra sesion (lee /usr/share/wayland-sessions)"
 info "  F12 = apagar / reiniciar"
 info ""
-info "Barra instalada: ${BARRA_ELEGIDA:-ninguna}"
+info "Barra instalada: ${BARRA_ELEGIDA:-ninguna}  (modo ${DWLB_MODO:-n/a})"
+info "  Repositorio: https://github.com/kolunmi/dwlb  (autor: kolunmi)"
+info "  Manual:      man 1 dwlb"
+info "  Super+s        oculta/muestra la barra"
+info "  Super+Shift+S  la mueve arriba/abajo"
 info ""
 info "Archivos clave para personalizar tu entorno:"
-info "  ~/dwl/config.h                Atajos, colores, reglas, layout de teclado (dwl-rebuild)"
-info "  ~/.config/lf/lfrc             Configuración del gestor de archivos"
-info "  /usr/local/bin/dwl-session     Variables y programas al iniciar sesión"
+info "  ~/dwl/config.h                Atajos, colores, reglas, teclado (dwl-rebuild)"
+info "  ~/.config/dwlb/config         Fuente y colores de la barra (sin recompilar)"
+info "  /usr/local/bin/dwlb-status    Bloques de estado de la barra (CPU, RAM, bateria...)"
+info "  ~/dwlb/config.h               Valores compilados de dwlb (dwlb-rebuild)"
+info "  ~/.config/lf/lfrc             Configuracion del gestor de archivos"
+info "  /usr/local/bin/dwl-session    Variables y programas al iniciar sesion"
 info "  /etc/greetd/config.toml       greetd + tuigreet"
 info "  /etc/pam.d/greetd             Donde se activo pam_turnstile (XDG_RUNTIME_DIR)"
 info ""
