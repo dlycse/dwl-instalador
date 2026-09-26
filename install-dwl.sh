@@ -967,7 +967,7 @@ static const enum libinput_config_tap_button_map button_map = LIBINPUT_CONFIG_TA
 /* commands */
 static const char *termcmd[]    = { "foot", NULL };          /* el "st" de Wayland */
 static const char *browsercmd[] = { "firefox", NULL };
-static const char *dmenucmd[]   = { "wmenu-run", "-f", "monospace:size=11", "-N", "1e1e2e", "-n", "cdd6f4", "-S", "89b4fa", "-s", "ffffff", NULL };
+static const char *dmenucmd[]   = { "sh", "-c", "dwlb -toggle-visibility all; wmenu-run -f 'monospace:size=11' -N 1e1e2e -n cdd6f4 -S 89b4fa -s ffffff; dwlb -toggle-visibility all", NULL };
 static const char *lfcmd[]      = { "foot", "-e", "lf", NULL };
 /* Volumen via PipeWire, pasos de 3% como en tu dwm */
 static const char *upvol[]      = { "wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "3%+", "-l", "1.0", NULL };
