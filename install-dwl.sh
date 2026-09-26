@@ -1,5 +1,5 @@
 #!/bin/sh
-# install-dwl-v0.9.1.sh v0.9.1
+# install-dwl-v0.7 .sh v0.7
 # Instalador de dwl (dwm para Wayland) para VOID LINUX.
 #
 # Modos:
@@ -171,7 +171,7 @@ GREETER_USER="_greeter"
 # MENU DE SELECCION
 # ==================================================================
 echo "=========================================="
-echo "    Instalador dwl (Void Linux) v0.9.1"
+echo "    Instalador dwl (Void Linux) v0.9.2"
 echo "=========================================="
 echo "Barra: dwlb (https://github.com/kolunmi/dwlb)"
 echo "Gestor de inicio: greetd + tuigreet"
@@ -284,7 +284,7 @@ instalar_drivers_gpu() {
 # prime-run: ejecuta una aplicacion usando la GPU NVIDIA en equipos hibridos.
 #   prime-run steam
 #   prime-run mpv video.mkv
-# Creado por install-dwl-v0.9.1.sh porque Void no empaqueta nvidia-prime.
+# Creado por install-dwl-v0.9.2.sh porque Void no empaqueta nvidia-prime.
 export __NV_PRIME_RENDER_OFFLOAD=1
 export __NV_PRIME_RENDER_OFFLOAD_PROVIDER=NVIDIA-G0
 export __GLX_VENDOR_LIBRARY_NAME=nvidia
@@ -384,7 +384,7 @@ configurar_dwlb() {
     # agrupar. Cambiar aqui NO requiere recompilar: basta con reiniciar dwl.
     write_config "$HOME/.config/dwlb/config" <<EOF
 # Configuracion de dwlb  (https://github.com/kolunmi/dwlb)
-# Generada por install-dwl-v0.9.1.sh
+# Generada por install-dwl-v0.9.2.sh
 # Una opcion por linea, tal cual se pasarian en la linea de comandos.
 # Referencia completa: man 1 dwlb
 
@@ -480,13 +480,15 @@ bloque_ram() {
 }
 
 bloque_fecha() {
-    # Clic izquierdo sobre la hora: abre un calendario en foot.
-    printf '^lm(foot -e sh -c "cal -3; read x")^fg(%s)%s^fg()^lm()' \
+    # Clic izquierdo sobre la hora: calendario. Clic central: terminal.
+    printf '^lm(foot -e sh -c "cal -3; read x")^mm(foot)^fg(%s)%s^fg()^mm()^lm()' \
         "$COLOR_TXT" "$(date '+%a %d/%m  %H:%M')"
 }
 
 while :; do
-    printf '%s%s%s%s%s\n' \
+    # ^mm(foot) envuelve todo el estado: clic central en cualquier punto
+    # del area de estado abre una terminal, como en tu dwm.
+    printf '^mm(foot)%s%s%s%s%s^mm()\n' \
         "$(bloque_cpu)" "$(bloque_ram)" "$(bloque_volumen)" \
         "$(bloque_bateria)" "$(bloque_fecha)"
     sleep 5
@@ -525,7 +527,7 @@ configurar_greetd() {
     backup_file /etc/greetd/config.toml
 
     sudo tee /etc/greetd/config.toml >/dev/null <<EOF
-# Generado por install-dwl-v0.9.1.sh (v0.9.1)
+# Generado por install-dwl-v0.9.2.sh (v0.9.2)
 # Documentacion: man 1 tuigreet
 
 [terminal]
@@ -554,7 +556,7 @@ EOF
             info "pam_turnstile ya estaba en $PAM_FILE."
         else
             backup_file "$PAM_FILE"
-            printf '\n# Anadido por install-dwl-v0.9.1.sh para turnstile (XDG_RUNTIME_DIR)\nsession\toptional\tpam_turnstile.so\n' | \
+            printf '\n# Anadido por install-dwl-v0.9.2.sh para turnstile (XDG_RUNTIME_DIR)\nsession\toptional\tpam_turnstile.so\n' | \
                 sudo tee -a "$PAM_FILE" >/dev/null
             info "Anadido 'session optional pam_turnstile.so' a $PAM_FILE"
             warn "Si algo falla al iniciar sesion, restaura la copia .bak-* de $PAM_FILE."
@@ -863,7 +865,7 @@ instalar_base() {
         info "Escribiendo config.h personalizado (atajos, volumen, brillo, screenshot, barra)..."
 
         cat > config.h <<EOF
-/* Configuracion de dwl generada por install-dwl-v0.9.1.sh
+/* Configuracion de dwl generada por install-dwl-v0.9.2.sh
  * Escrita contra la API ACTUAL de dwl (codeberg.org/dwl/dwl, rama main).
  * Cambios de dwl que rompian los config.h antiguos y aqui ya estan resueltos:
  *   - Ya NO existe el array tags[]: ahora se usa  #define TAGCOUNT (9)
@@ -963,70 +965,55 @@ static const enum libinput_config_tap_button_map button_map = LIBINPUT_CONFIG_TA
 #define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
 
 /* commands */
-static const char *termcmd[]    = { "foot", NULL };
+static const char *termcmd[]    = { "foot", NULL };          /* el "st" de Wayland */
 static const char *browsercmd[] = { "firefox", NULL };
 static const char *dmenucmd[]   = { "wmenu-run", "-f", "monospace:size=11", "-nb", "#1e1e2e", "-nf", "#cdd6f4", "-sb", "#89b4fa", "-sf", "#ffffff", NULL };
-/* Volumen via PipeWire (el wrapper dwl-session ya levanta wireplumber) */
-static const char *upvol[]      = { "wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "5%+", NULL };
-static const char *downvol[]    = { "wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "5%-", NULL };
+static const char *lfcmd[]      = { "foot", "-e", "lf", NULL };
+/* Volumen via PipeWire, pasos de 3% como en tu dwm */
+static const char *upvol[]      = { "wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "3%+", "-l", "1.0", NULL };
+static const char *downvol[]    = { "wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "3%-", NULL };
 static const char *mutevol[]    = { "wpctl", "set-mute",   "@DEFAULT_AUDIO_SINK@", "toggle", NULL };
+/* Brillo, pasos de 5% */
 static const char *brup[]       = { "brightnessctl", "set", "+5%", NULL };
 static const char *brdown[]     = { "brightnessctl", "set", "5%-", NULL };
 static const char *screenshot[] = { "sh", "-c", "grim ~/Pictures/\$(date +'%Y-%m-%d_%H-%M-%S').png", NULL };
-static const char *lfcmd[]      = { "foot", "-e", "lf", NULL };
 /* Control remoto de la barra dwlb (man 1 dwlb, seccion Commands) */
 static const char *bartoggle[]  = { "dwlb", "-toggle-visibility", "all", NULL };
 static const char *barmove[]    = { "dwlb", "-toggle-location", "all", NULL };
 
 static const Key keys[] = {
+    /* ---------------- PROGRAMAS ---------------- */
     /* modificador               tecla                          funcion           argumento */
     { MODKEY,                    XKB_KEY_d,                     spawn,            {.v = dmenucmd } },
-    { MODKEY,                    XKB_KEY_p,                     spawn,            {.v = dmenucmd } },
     { MODKEY,                    XKB_KEY_Return,                spawn,            {.v = termcmd } },
     { MODKEY,                    XKB_KEY_t,                     spawn,            {.v = termcmd } },
     { MODKEY,                    XKB_KEY_b,                     spawn,            {.v = browsercmd } },
-    { MODKEY,                    XKB_KEY_e,                     spawn,            {.v = lfcmd } },
+    { MODKEY,                    XKB_KEY_r,                     spawn,            {.v = lfcmd } },
+
+    /* ---------------- VENTANAS ---------------- */
     { MODKEY,                    XKB_KEY_q,                     killclient,       {0} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_C,                     killclient,       {0} },
-
-    /* Layouts */
-    { MODKEY,                    XKB_KEY_r,                     setlayout,        {.v = &layouts[0]} },
-    { MODKEY,                    XKB_KEY_v,                     setlayout,        {.v = &layouts[1]} },
-    { MODKEY,                    XKB_KEY_m,                     setlayout,        {.v = &layouts[2]} },
-    { MODKEY,                    XKB_KEY_space,                 setlayout,        {0} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_space,                 togglefloating,   {0} },
-    { MODKEY,                    XKB_KEY_f,                     togglefullscreen, {0} },
-
-    /* Foco y tamanos */
     { MODKEY,                    XKB_KEY_j,                     focusstack,       {.i = +1 } },
+    { MODKEY,                    XKB_KEY_Down,                  focusstack,       {.i = +1 } },
     { MODKEY,                    XKB_KEY_k,                     focusstack,       {.i = -1 } },
+    { MODKEY,                    XKB_KEY_Up,                    focusstack,       {.i = -1 } },
     { MODKEY,                    XKB_KEY_h,                     setmfact,         {.f = -0.05f} },
     { MODKEY,                    XKB_KEY_l,                     setmfact,         {.f = +0.05f} },
     { MODKEY,                    XKB_KEY_i,                     incnmaster,       {.i = +1 } },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_I,                     incnmaster,       {.i = -1 } },
-    { MODKEY,                    XKB_KEY_z,                     zoom,             {0} },
-    { MODKEY,                    XKB_KEY_Tab,                   view,             {0} },
-    { MODKEY,                    XKB_KEY_0,                     view,             {.ui = ~0} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_equal,                 tag,              {.ui = ~0} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_T,                     togglefloating,   {0} },
+    /* Super+w: mostrar u ocultar la barra (dwlb, no dwl) */
+    { MODKEY,                    XKB_KEY_w,                     spawn,            {.v = bartoggle } },
+    /* Extra util: mover la barra arriba/abajo */
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_W,                     spawn,            {.v = barmove } },
+    /* Mandar la ventana enfocada al area maestra (el "zoom" de dwm) */
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_Return,                zoom,             {0} },
 
-    /* Varios monitores */
-    { MODKEY,                    XKB_KEY_comma,                 focusmon,         {.i = WLR_DIRECTION_LEFT} },
-    { MODKEY,                    XKB_KEY_period,                focusmon,         {.i = WLR_DIRECTION_RIGHT} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_less,                  tagmon,           {.i = WLR_DIRECTION_LEFT} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_greater,               tagmon,           {.i = WLR_DIRECTION_RIGHT} },
+    /* ---------------- LAYOUTS ---------------- */
+    { MODKEY,                    XKB_KEY_f,                     setlayout,        {.v = &layouts[2]} }, /* monocle */
+    { MODKEY,                    XKB_KEY_space,                 setlayout,        {0} },                /* alternar con el anterior */
+    /* Pantalla completa real (el cliente ocupa todo, sin barra) */
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_F,                     togglefullscreen, {0} },
 
-    /* Barra dwlb: Super+s la oculta/muestra, Super+Shift+S la manda abajo/arriba */
-    { MODKEY,                    XKB_KEY_s,                     spawn,            {.v = bartoggle } },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_S,                     spawn,            {.v = barmove } },
-
-    /* Teclas multimedia */
-    { 0,                         XKB_KEY_XF86AudioRaiseVolume,  spawn,            {.v = upvol } },
-    { 0,                         XKB_KEY_XF86AudioLowerVolume,  spawn,            {.v = downvol } },
-    { 0,                         XKB_KEY_XF86AudioMute,         spawn,            {.v = mutevol } },
-    { 0,                         XKB_KEY_XF86MonBrightnessUp,   spawn,            {.v = brup } },
-    { 0,                         XKB_KEY_XF86MonBrightnessDown, spawn,            {.v = brdown } },
-    { 0,                         XKB_KEY_Print,                 spawn,            {.v = screenshot } },
-
+    /* ---------------- TAGS ---------------- */
     TAGKEYS(          XKB_KEY_1, XKB_KEY_exclam,                     0),
     TAGKEYS(          XKB_KEY_2, XKB_KEY_quotedbl,                   1),
     TAGKEYS(          XKB_KEY_3, XKB_KEY_numbersign,                 2),
@@ -1036,9 +1023,40 @@ static const Key keys[] = {
     TAGKEYS(          XKB_KEY_7, XKB_KEY_slash,                      6),
     TAGKEYS(          XKB_KEY_8, XKB_KEY_parenleft,                  7),
     TAGKEYS(          XKB_KEY_9, XKB_KEY_parenright,                 8),
+    { MODKEY,                    XKB_KEY_Tab,                   view,             {0} },  /* tag anterior */
+    { MODKEY,                    XKB_KEY_0,                     view,             {.ui = ~0} }, /* ver todos */
 
-    /* Salir de dwl */
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_Q,                     quit,             {0} },
+    /* ---------------- MONITORES ----------------
+     * Shift+coma y Shift+punto NO dan '<' y '>' en teclado latam/es: dan
+     * ';' y ':'. Por eso se registran las dos variantes y funciona en
+     * cualquiera de las tres distribuciones del instalador. */
+    { MODKEY,                    XKB_KEY_comma,                 focusmon,         {.i = WLR_DIRECTION_LEFT} },
+    { MODKEY,                    XKB_KEY_period,                focusmon,         {.i = WLR_DIRECTION_RIGHT} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_less,                  tagmon,           {.i = WLR_DIRECTION_LEFT} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_greater,               tagmon,           {.i = WLR_DIRECTION_RIGHT} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_semicolon,             tagmon,           {.i = WLR_DIRECTION_LEFT} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_colon,                 tagmon,           {.i = WLR_DIRECTION_RIGHT} },
+
+    /* ---------------- GAPS ----------------
+     * dwl NO trae gaps: es funcionalidad del parche vanitygaps, igual que en
+     * dwm. Sin el parche, estas teclas no existirian y el config no compila.
+     * Si aplicas el parche, descomenta este bloque:
+     * { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_u,       incgaps,   {.i = +1 } },
+     * { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT, XKB_KEY_U, incgaps, {.i = -1 } },
+     * { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_0,       togglegaps, {0} },
+     * { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT, XKB_KEY_equal, defaultgaps, {0} },
+     */
+
+    /* ---------------- TECLAS ESPECIALES ---------------- */
+    { 0,                         XKB_KEY_XF86AudioRaiseVolume,  spawn,            {.v = upvol } },
+    { 0,                         XKB_KEY_XF86AudioLowerVolume,  spawn,            {.v = downvol } },
+    { 0,                         XKB_KEY_XF86AudioMute,         spawn,            {.v = mutevol } },
+    { 0,                         XKB_KEY_XF86MonBrightnessUp,   spawn,            {.v = brup } },
+    { 0,                         XKB_KEY_XF86MonBrightnessDown, spawn,            {.v = brdown } },
+    { 0,                         XKB_KEY_Print,                 spawn,            {.v = screenshot } },
+
+    /* ---------------- SESION ---------------- */
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_E,                     quit,             {0} },
     { WLR_MODIFIER_CTRL|WLR_MODIFIER_ALT, XKB_KEY_BackSpace,    quit,             {0} },
 
     /* Ctrl+Alt+Fx para cambiar de VT (tty). NO los borres o te quedas sin
@@ -1048,11 +1066,12 @@ static const Key keys[] = {
     CHVT(7), CHVT(8), CHVT(9), CHVT(10), CHVT(11), CHVT(12),
 };
 
-/* Raton: moveresize sustituye a los antiguos movemouse/resizemouse */
+/* ---------------- MOUSE SOBRE LAS VENTANAS ----------------
+ * moveresize sustituye a los antiguos movemouse/resizemouse de dwl. */
 static const Button buttons[] = {
-    { MODKEY, BTN_LEFT,   moveresize,     {.ui = CurMove} },
-    { MODKEY, BTN_MIDDLE, togglefloating, {0} },
-    { MODKEY, BTN_RIGHT,  moveresize,     {.ui = CurResize} },
+    { MODKEY, BTN_LEFT,   moveresize,     {.ui = CurMove} },   /* mover */
+    { MODKEY, BTN_MIDDLE, togglefloating, {0} },               /* alternar flotante */
+    { MODKEY, BTN_RIGHT,  moveresize,     {.ui = CurResize} }, /* redimensionar */
 };
 
 /* Rueda del raton. El array no puede quedar vacio. */
@@ -1467,8 +1486,8 @@ info ""
 info "Barra instalada: ${BARRA_ELEGIDA:-ninguna}  (modo ${DWLB_MODO:-n/a})"
 info "  Repositorio: https://github.com/kolunmi/dwlb  (autor: kolunmi)"
 info "  Manual:      man 1 dwlb"
-info "  Super+s        oculta/muestra la barra"
-info "  Super+Shift+S  la mueve arriba/abajo"
+info "  Super+w        oculta/muestra la barra"
+info "  Super+Shift+W  la mueve arriba/abajo"
 info ""
 info "Archivos clave para personalizar tu entorno:"
 info "  ~/dwl/config.h                Atajos, colores, reglas, teclado (dwl-rebuild)"
