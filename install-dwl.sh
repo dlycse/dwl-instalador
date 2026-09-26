@@ -74,102 +74,6 @@ disable_svc() {
 }
 
 # ----------------------------------------------------------------
-# Seguro anti-arranque-prematuro de greetd
-# ----------------------------------------------------------------
-# greetd se deja ENLAZADO pero EN PAUSA (runit no arranca un servicio que
-# tenga un fichero 'down' en /etc/sv/<servicio>/) y solo se levanta al final
-# del script, con iniciar_greetd(). Si tuigreet aparece mientras el script
-# sigue instalando o compilando, puedes iniciar sesion a medias: sin los
-# grupos aplicados, con xbps a medias de una transaccion o con el wrapper
-# recien escrito. Mas vale que el greeter tarde 5 minutos en aparecer.
-GREETD_EN_PAUSA=0
-
-# Detecta una consola física: parar un display manager desde su propia sesión
-# puede cerrar la terminal que está ejecutando el instalador.
-sesion_en_tty_consola() {
-    TTY_ACTUAL=$(tty 2>/dev/null || true)
-    case "$TTY_ACTUAL" in
-        /dev/tty[0-9]*) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-# greetd se pausa antes de instalar paquetes. Si ya está activo solo se detiene
-# desde una TTY física distinta; desde una terminal gráfica se cancela seguro.
-pausar_greetd_preexistente() {
-    [ -L /var/service/greetd ] || return 0
-
-    if [ ! -d /etc/sv/greetd ]; then
-        error "Existe /var/service/greetd, pero falta /etc/sv/greetd. No puedo asegurar una pausa segura."
-        return 1
-    fi
-
-    ESTADO_GREETD=$(sudo sv status greetd 2>&1 || true)
-    case "$ESTADO_GREETD" in
-        run:*)
-            if ! sesion_en_tty_consola; then
-                error "greetd ya esta ejecutandose en una sesion grafica."
-                warn "Cambia a una TTY fisica, ejecuta el instalador desde ahi y deja que este lo pause."
-                return 1
-            fi
-            warn "Deteniendo greetd desde esta TTY antes de instalar..."
-            sudo sv down greetd || return 1
-            ESTADO_GREETD=$(sudo sv status greetd 2>&1 || true)
-            case "$ESTADO_GREETD" in
-                down:*) ;;
-                *) error "No pude confirmar que greetd quedo detenido: $ESTADO_GREETD"; return 1 ;;
-            esac
-            ;;
-        down:*) ;;
-        *)
-            error "No pude confirmar el estado de greetd con runit: $ESTADO_GREETD"
-            warn "No continuo para evitar que el greeter se inicie durante la instalacion."
-            return 1
-            ;;
-    esac
-
-    sudo touch /etc/sv/greetd/down || return 1
-    GREETD_EN_PAUSA=1
-    info "greetd queda en pausa hasta terminar la instalacion."
-}
-
-# Si LightDM está activo, solo se permite quitarlo desde consola, no desde una
-# terminal gráfica que dependa de él. LightDM nunca se deja como opción.
-comprobar_lightdm_activo() {
-    [ -L /var/service/lightdm ] || return 0
-    ESTADO_LIGHTDM=$(sudo sv status lightdm 2>&1 || true)
-    case "$ESTADO_LIGHTDM" in
-        run:*)
-            if ! sesion_en_tty_consola; then
-                error "LightDM esta ejecutandose y esta terminal podria depender de el."
-                warn "Cambia a una TTY fisica, inicia sesion como usuario normal y vuelve a ejecutar el instalador."
-                return 1
-            fi
-            ;;
-        down:*) ;;
-        *)
-            error "No pude comprobar el estado de LightDM con runit: $ESTADO_LIGHTDM"
-            return 1
-            ;;
-    esac
-}
-
-limpieza_salida() {
-    CODIGO=$?
-    if [ "$CODIGO" -ne 0 ] && [ "$GREETD_EN_PAUSA" -eq 1 ]; then
-        warn ""
-        warn "El script salio antes de terminar (codigo $CODIGO)."
-        warn "greetd quedo EN PAUSA: no arranca solo, asi que no hay riesgo de"
-        warn "iniciar sesion a medias. Cuando quieras levantarlo:"
-        warn "  sudo rm -f /etc/sv/greetd/down"
-        warn "  sudo sv start greetd"
-    fi
-}
-trap limpieza_salida EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
-
-# ----------------------------------------------------------------
 # 0. Comprobaciones previas
 # ----------------------------------------------------------------
 if [ "$(id -u)" -eq 0 ]; then
@@ -268,10 +172,6 @@ case "$OPCION" in
     3) info "Saliendo..."; exit 0 ;;
     *) error "Opcion no valida."; exit 1 ;;
 esac
-
-# Evita cortar por accidente la terminal desde la que se ejecuta el instalador.
-pausar_greetd_preexistente || exit 1
-comprobar_lightdm_activo || exit 1
 
 # ==================================================================
 # FUNCION: detectar TODAS las GPUs (incluidas las hibridas / Optimus)
@@ -594,18 +494,12 @@ EOF
         disable_svc "agetty-tty$GREETD_VT"
     fi
 
-    # greetd se deja EN PAUSA: se levanta al final con iniciar_greetd().
+    # greetd se enlaza en runit, pero NO se arranca aquí.
+    # Se arranca al final del script, en iniciar_greetd().
     if [ ! -d /etc/sv/greetd ]; then
         error "El paquete greetd no creo /etc/sv/greetd; no habilito un servicio incompleto."
         return 1
     fi
-    sudo touch /etc/sv/greetd/down || return 1
-    GREETD_EN_PAUSA=1
-    enable_svc greetd || return 1
-    info "greetd preparado EN PAUSA (no aparecera hasta que el script termine)."
-
-    info "greetd + tuigreet configurados."
-    info "Atajos en el login: F2 = cambiar comando · F3 = elegir sesion · F12 = apagar/reiniciar"
 }
 
 # ==================================================================
@@ -613,9 +507,7 @@ EOF
 # ==================================================================
 iniciar_greetd() {
     if [ ! -x /usr/local/bin/dwl-session ]; then
-        error "No existe /usr/local/bin/dwl-session: greetd se mantiene EN PAUSA."
-        warn  "Cuando lo tengas, levantalo con:"
-        warn  "  sudo rm -f /etc/sv/greetd/down && sudo sv start greetd"
+        error "No existe /usr/local/bin/dwl-session: no arranco greetd."
         return 1
     fi
     if [ ! -d /etc/sv/greetd ]; then
@@ -624,50 +516,21 @@ iniciar_greetd() {
     fi
 
     if [ ! -L /var/service/greetd ]; then
-        sudo touch /etc/sv/greetd/down || return 1
-        GREETD_EN_PAUSA=1
         enable_svc greetd || return 1
     fi
 
-    info "Instalacion terminada: levantando greetd como ultimo paso..."
-    if ! sudo rm -f /etc/sv/greetd/down; then
-        error "No pude retirar /etc/sv/greetd/down; greetd sigue en pausa."
-        return 1
-    fi
 
-    # No se declara éxito hasta que runit confirme que el servicio está arriba.
+    info "Todo instalado: arrancando greetd..."
     if ! sudo sv start greetd; then
-        error "runit no pudo iniciar greetd; intento dejarlo otra vez en pausa."
-        if sudo touch /etc/sv/greetd/down; then
-            GREETD_EN_PAUSA=1
-            sudo sv stop greetd >/dev/null 2>&1 || true
-        else
-            GREETD_EN_PAUSA=0
-            warn "No pude volver a crear /etc/sv/greetd/down; revisa el servicio manualmente."
-        fi
+        error "runit no pudo iniciar greetd. Revisa con: sudo sv status greetd"
         return 1
     fi
 
     ESTADO_GREETD=$(sudo sv status greetd 2>&1 || true)
     case "$ESTADO_GREETD" in
-        run:*) GREETD_EN_PAUSA=0 ;;
-        *)
-            error "runit no confirma que greetd este activo: $ESTADO_GREETD"
-            if sudo touch /etc/sv/greetd/down; then
-                GREETD_EN_PAUSA=1
-                sudo sv stop greetd >/dev/null 2>&1 || true
-            else
-                GREETD_EN_PAUSA=0
-                warn "No pude volver a crear /etc/sv/greetd/down; revisa el servicio manualmente."
-            fi
-            return 1
-            ;;
+        run:*) info "greetd activo: tienes tuigreet en la tty$GREETD_VT." ;;
+        *)     warn "runit no confirma que greetd esté activo: $ESTADO_GREETD" ;;
     esac
-
-    info "greetd arrancado: tienes tuigreet en la tty$GREETD_VT."
-    warn "NO inicies sesion todavia. Reinicia antes: los grupos nuevos"
-    warn "('$SEAT_GROUP y video) solo se aplican al volver a entrar,"
-    warn "y sin ellos dwl no puede abrir la GPU ni el teclado."
 }
 
 # ==================================================================
@@ -901,20 +764,130 @@ instalar_base() {
     fix_owner
 
     if [ -f config.h ]; then
-        warn "config.h ya existe: se conserva tu version, no se modifica."
+        warn "config.h ya existe: se conserva tu version (no se sobreescribe)."
+        warn "Si quieres regenerarlo, borra ~/dwl/config.h y vuelve a ejecutar."
     else
-        info "Copiando config.def.h -> config.h..."
-        cp config.def.h config.h
+        info "Escribiendo config.h personalizado (atajos, volumen, brillo, screenshot)..."
 
-        # Escribimos el layout dentro del struct xkb_rule_names. Al ser un
-        # inicializador designado, el orden de los campos da igual.
-        if grep -q 'xkb_rule_names xkb_rules' config.h && ! grep -q '\.layout' config.h; then
-            sed -i "s|^\(static const struct xkb_rule_names xkb_rules = {\)|\1\n\t.layout = \"$KB_XKB\",|" config.h
-            info "Layout de teclado '$KB_XKB' escrito en config.h (xkb_rules)."
-        else
-            warn "No pude escribir el layout automaticamente. Edita ~/dwl/config.h,"
-            warn "busca 'xkb_rules' y anade:  .layout = \"$KB_XKB\","
-        fi
+        cat > config.h <<EOF
+/* Configuracion de dwl generada por install-dwl-v0.8.0.sh
+ * Personaliza este archivo y aplica cambios con: dwl-rebuild
+ */
+#include <xkbcommon/xkbcommon-keysyms.h>
+
+/* appearance */
+static const int sloppyfocus        = 1;
+static const int bypass_surface_visibility = 0;
+static const unsigned int borderpx  = 2;
+static const float rootcolor[]      = {0.11f, 0.11f, 0.18f, 1.0f};
+static const float bordercolor[]    = {0.19f, 0.19f, 0.26f, 1.0f};
+static const float focuscolor[]     = {0.53f, 0.70f, 0.98f, 1.0f};
+static const float urgentcolor[]    = {0.93f, 0.31f, 0.31f, 1.0f};
+
+/* tagging */
+static const char *tags[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9" };
+
+static const Rule rules[] = {
+    /* app_id     title       tags mask     isfloating   monitor */
+    { "Gimp",     NULL,       0,            1,           -1 },
+    { "firefox",  NULL,       1 << 0,       0,           -1 },
+};
+
+/* layout(s) */
+static const Layout layouts[] = {
+    { "[]=",      tile },
+    { "><>",      NULL },
+    { "[M]",      monocle },
+};
+
+/* monitor(s) */
+static const MonitorRule monrules[] = {
+    /* name       mfact nmaster scale layout       rotate/reflect */
+    { NULL,       0.50f, 1,      1,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL },
+};
+
+/* keyboard */
+static const struct xkb_rule_names xkb_rules = {
+    .rules = NULL, .model = NULL, .layout = "$KB_XKB", .variant = NULL, .options = NULL,
+};
+static const int repeat_rate = 25;
+static const int repeat_delay = 600;
+static const int tap_to_click = 1;
+static const int tap_and_drag = 1;
+static const int drag_lock = 1;
+static const int natural_scrolling = 0;
+static const int disable_while_typing = 1;
+static const int left_handed = 0;
+static const int middle_button_emulation = 0;
+
+/* Modificador (tecla Windows/Super) */
+#define MODKEY WLR_MODIFIER_LOGO
+
+/* Configuracion de TAGKEYS */
+#define TAGKEYS(KEY,SKEY,TAG) \\
+    { MODKEY,                    KEY,            view,            {.ui = 1 << TAG} }, \\
+    { MODKEY|WLR_MODIFIER_CTRL,  KEY,            toggleview,      {.ui = 1 << TAG} }, \\
+    { MODKEY|WLR_MODIFIER_SHIFT, SKEY,           tag,             {.ui = 1 << TAG} }, \\
+    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,SKEY,toggletag, {.ui = 1 << TAG} }
+
+/* commands */
+static const char *termcmd[]    = { "foot", NULL };
+static const char *browsercmd[] = { "firefox", NULL };
+static const char *dmenucmd[]   = { "wmenu-run", "-f", "monospace:size=11", "-nb", "#1e1e2e", "-nf", "#cdd6f4", "-sb", "#89b4fa", "-sf", "#ffffff", NULL };
+/* Volumen via PipeWire (el wrapper dwl-session ya levanta wireplumber) */
+static const char *upvol[]      = { "wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "5%+", NULL };
+static const char *downvol[]    = { "wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "5%-", NULL };
+static const char *mutevol[]    = { "wpctl", "set-mute",   "@DEFAULT_AUDIO_SINK@", "toggle", NULL };
+static const char *brup[]       = { "brightnessctl", "set", "+5%", NULL };
+static const char *brdown[]     = { "brightnessctl", "set", "5%-", NULL };
+static const char *screenshot[] = { "sh", "-c", "grim ~/Pictures/\$(date +'%Y-%m-%d_%H-%M-%S').png", NULL };
+static const char *lfcmd[]      = { "foot", "-e", "lf", NULL };
+
+static const Key keys[] = {
+    /* modifier                  key                            function        argument */
+    { MODKEY,                    XKB_KEY_d,                     spawn,          {.v = dmenucmd } },
+    { MODKEY,                    XKB_KEY_Return,                spawn,          {.v = termcmd } },
+    { MODKEY,                    XKB_KEY_t,                     spawn,          {.v = termcmd } },
+    { MODKEY,                    XKB_KEY_b,                     spawn,          {.v = browsercmd } },
+    { MODKEY,                    XKB_KEY_e,                     spawn,          {.v = lfcmd } },
+    { MODKEY,                    XKB_KEY_q,                     killclient,     {0} },
+    { MODKEY,                    XKB_KEY_f,                     setlayout,      {.v = &layouts[2]} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_T,                     togglefloating, {0} },
+    { MODKEY,                    XKB_KEY_r,                     setlayout,      {0} },
+    { MODKEY,                    XKB_KEY_j,                     focusstack,     {.i = +1 } },
+    { MODKEY,                    XKB_KEY_k,                     focusstack,     {.i = -1 } },
+    { MODKEY,                    XKB_KEY_h,                     setmfact,       {.f = -0.05} },
+    { MODKEY,                    XKB_KEY_l,                     setmfact,       {.f = +0.05} },
+    { MODKEY,                    XKB_KEY_i,                     incnmaster,     {.i = +1 } },
+    { MODKEY,                    XKB_KEY_space,                 setlayout,      {0} },
+    { MODKEY,                    XKB_KEY_Tab,                   view,           {0} },
+
+    { 0,                         XKB_KEY_XF86AudioRaiseVolume,  spawn,          {.v = upvol } },
+    { 0,                         XKB_KEY_XF86AudioLowerVolume,  spawn,          {.v = downvol } },
+    { 0,                         XKB_KEY_XF86AudioMute,         spawn,          {.v = mutevol } },
+    { 0,                         XKB_KEY_XF86MonBrightnessUp,   spawn,          {.v = brup } },
+    { 0,                         XKB_KEY_XF86MonBrightnessDown, spawn,          {.v = brdown } },
+    { 0,                         XKB_KEY_Print,                 spawn,          {.v = screenshot } },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_E,                     quit,           {0} },
+
+    TAGKEYS(          XKB_KEY_1, XKB_KEY_exclam,                     0),
+    TAGKEYS(          XKB_KEY_2, XKB_KEY_quotedbl,                   1),
+    TAGKEYS(          XKB_KEY_3, XKB_KEY_numbersign,                 2),
+    TAGKEYS(          XKB_KEY_4, XKB_KEY_dollar,                     3),
+    TAGKEYS(          XKB_KEY_5, XKB_KEY_percent,                    4),
+    TAGKEYS(          XKB_KEY_6, XKB_KEY_ampersand,                  5),
+    TAGKEYS(          XKB_KEY_7, XKB_KEY_slash,                      6),
+    TAGKEYS(          XKB_KEY_8, XKB_KEY_parenleft,                  7),
+    TAGKEYS(          XKB_KEY_9, XKB_KEY_parenright,                 8),
+};
+
+static const Button buttons[] = {
+    { MODKEY, Button1, movemouse,      {0} },
+    { MODKEY, Button2, togglefloating, {0} },
+    { MODKEY, Button3, resizemouse,    {0} },
+};
+EOF
+        info "config.h escrito con layout '$KB_XKB'."
     fi
 
     info "Compilando dwl..."
