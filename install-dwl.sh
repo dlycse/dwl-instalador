@@ -3,7 +3,7 @@
 # Instalador de dwl (dwm para Wayland) para VOID LINUX.
 #
 # Modos:
-#   1) Basico:   dwl + barra externa, foot, wmenu, slstatus, swaybg, pipewire
+#   1) Basico:   dwl + barra externa, foot, wmenu, swaybg, pipewire
 #   2) Completo: basico + Steam, drivers de GPU (incluido hibridas/Optimus)
 # Kernel: ofrece el paquete linux7.x mas reciente solo si XBPS lo encuentra;
 # por defecto conserva el kernel actual y, si se elige, instala 7.x en paralelo.
@@ -131,7 +131,6 @@ fi
 # ----------------------------------------------------------------
 DWL_REPO="https://codeberg.org/dwl/dwl.git"
 DWLBAR_REPO="https://github.com/MadcowOG/dwl-bar.git"
-SLSTATUS_REPO="https://git.suckless.org/slstatus"
 WALLPAPER_DIR="$HOME/Pictures"
 WALLPAPER_PATH="$WALLPAPER_DIR/wallpaper.jpg"
 WALLPAPER_URL="https://wallpapercave.com/download/empty-error-wallpapers-wp8330753"
@@ -149,8 +148,6 @@ fi
 GREETER_USER="_greeter"
 # Barra a usar: dwl-bar (por defecto) o waybar
 BARRA="${BARRA:-dwl-bar}"
-# Enchufar slstatus al FIFO de dwl-bar (bug conocido de CPU en dwl-bar)
-SLSTATUS_EN_BARRA="${SLSTATUS_EN_BARRA:-0}"
 
 # ==================================================================
 # MENU DE SELECCION
@@ -161,7 +158,7 @@ echo "=========================================="
 echo "Gestor de inicio: greetd + tuigreet"
 echo "(si tenias lightdm, se desactivara y desinstalara)"
 echo
-echo "1) Instalacion BASICA (dwl + barra, foot, wmenu, slstatus, swaybg)"
+echo "1) Instalacion BASICA (dwl + barra, foot, wmenu, swaybg)"
 echo "2) Instalacion COMPLETA (basica + Steam y drivers de GPU)"
 echo "3) Salir"
 printf "Opcion [1-3]: "
@@ -298,8 +295,7 @@ EOF
 # FUNCION: barra externa (dwl-bar con Waybar como respaldo)
 # ==================================================================
 # dwl -s <cmd> arranca <cmd> cuando el compositor ya esta listo y le envia el
-# estado (tags, titulo, layout) por su entrada estandar. slstatus NO vale para
-# esto: no dibuja nada, solo imprime texto.
+# estado (tags, titulo, layout) por su entrada estandar.
 compilar_dwl_bar() {
     cd "$HOME" || return 1
     [ -d dwl-bar ] || git clone "$DWLBAR_REPO" || return 1
@@ -462,13 +458,15 @@ EOF
     # --- 3. turnstile: XDG_RUNTIME_DIR ----------------------------------
     # greetd NO crea /run/user/$UID; turnstile lo prepara mediante PAM.
     # Sin el, pipewire y el socket de Wayland fallan.
-    # En Void, greetd tiene un archivo PAM propio en /etc/pam.d/greetd.
-    # Editar system-login no garantiza que la sesión del greeter lo incluya.
+    # En Void, greetd tiene un archivo PAM propio en /etc/pam.d/greetd, que
+    # instala el paquete greetd SIN pam_turnstile.so (solo trae
+    # 'auth/account/session include system-local-login'), asi que hay que
+    # anadirlo a mano tras instalar el paquete turnstile.
     info "Configurando turnstile (prepara XDG_RUNTIME_DIR mediante PAM)..."
     enable_svc turnstiled || warn "turnstiled no esta disponible; dwl-session usara su directorio privado de respaldo."
 
     PAM_FILE="/etc/pam.d/greetd"
-    if [ -f /usr/lib/security/pam_turnstile.so ] || [ -f /usr/lib64/security/pam_turnstile.so ]; then
+    if [ -f /usr/lib/security/pam_turnstile.so ]; then
         if [ ! -f "$PAM_FILE" ]; then
             warn "No existe $PAM_FILE (el paquete greetd deberia haberlo creado)."
             warn "No puedo activar pam_turnstile automaticamente; revisa la instalacion de greetd."
@@ -587,7 +585,7 @@ instalar_base() {
     # Basta con xorg-server-xwayland para las apps de X11 (Steam, juegos).
     # Si lo quieres: sudo xbps-install -Sy xorg-server
     info "Instalando dependencias de dwl y del entorno Wayland..."
-    sudo xbps-install -Sy \
+    if ! sudo xbps-install -Sy \
         base-devel file pkg-config \
         libinput libinput-devel \
         wayland wayland-devel wayland-protocols \
@@ -602,7 +600,10 @@ instalar_base() {
         swaybg swaylock grim slurp wl-clipboard \
         brightnessctl curl procps-ng \
         nano nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv \
-        chrony firefox btop cowsay dbus
+        chrony firefox btop cowsay dbus; then
+        error "xbps-install fallo instalando las dependencias base. Revisa tu conexion/repos e intenta de nuevo."
+        return 1
+    fi
 
     info "Habilitando servicios (dbus, chronyd, seatd)..."
     enable_svc dbus || return 1
@@ -627,7 +628,11 @@ instalar_base() {
         return 1
     fi
 
-    sudo usermod -aG "$SEAT_GROUP" "$REAL_USER"
+    if ! sudo usermod -aG "$SEAT_GROUP" "$REAL_USER"; then
+        error "No pude anadir a $REAL_USER al grupo '$SEAT_GROUP'."
+        warn "Hazlo a mano: sudo usermod -aG $SEAT_GROUP $REAL_USER"
+        return 1
+    fi
 
     # El grupo video tambien se usa para acceso directo a dispositivos DRM y
     # aceleracion; se agrega en ambos modos, no solo si Steam esta disponible.
@@ -710,12 +715,12 @@ instalar_base() {
 
     if [ -n "$TZ_INPUT" ] && [ -f "/usr/share/zoneinfo/$TZ_INPUT" ]; then
         info "Pais: $PAIS_INPUT -> Zona horaria: $TZ_INPUT"
-        sudo ln -sf "/usr/share/zoneinfo/$TZ_INPUT" /etc/localtime
+        sudo ln -sf "/usr/share/zoneinfo/$TZ_INPUT" /etc/localtime || warn "No pude enlazar /etc/localtime."
         sudo hwclock --systohc || warn "No se pudo sincronizar el reloj de hardware (se ignora)."
         if grep -qE '^[#[:space:]]*TIMEZONE=' /etc/rc.conf 2>/dev/null; then
-            sudo sed -i "s|^[#[:space:]]*TIMEZONE=.*|TIMEZONE=\"$TZ_INPUT\"|" /etc/rc.conf
+            sudo sed -i "s|^[#[:space:]]*TIMEZONE=.*|TIMEZONE=\"$TZ_INPUT\"|" /etc/rc.conf || warn "No pude actualizar TIMEZONE en /etc/rc.conf."
         else
-            printf 'TIMEZONE="%s"\n' "$TZ_INPUT" | sudo tee -a /etc/rc.conf >/dev/null
+            printf 'TIMEZONE="%s"\n' "$TZ_INPUT" | sudo tee -a /etc/rc.conf >/dev/null || warn "No pude escribir TIMEZONE en /etc/rc.conf."
         fi
     else
         warn "No reconoci '$PAIS_INPUT' como pais. Se deja la zona horaria sin cambios."
@@ -745,9 +750,9 @@ instalar_base() {
 
     if [ -n "$KB_CONSOLA" ]; then
         if grep -qE '^[#[:space:]]*KEYMAP=' /etc/rc.conf 2>/dev/null; then
-            sudo sed -i "s|^[#[:space:]]*KEYMAP=.*|KEYMAP=\"$KB_CONSOLA\"|" /etc/rc.conf
+            sudo sed -i "s|^[#[:space:]]*KEYMAP=.*|KEYMAP=\"$KB_CONSOLA\"|" /etc/rc.conf || warn "No pude actualizar KEYMAP en /etc/rc.conf."
         else
-            printf 'KEYMAP="%s"\n' "$KB_CONSOLA" | sudo tee -a /etc/rc.conf >/dev/null
+            printf 'KEYMAP="%s"\n' "$KB_CONSOLA" | sudo tee -a /etc/rc.conf >/dev/null || warn "No pude escribir KEYMAP en /etc/rc.conf."
         fi
         command -v loadkeys >/dev/null 2>&1 && sudo loadkeys "$KB_CONSOLA" 2>/dev/null || true
     fi
@@ -988,49 +993,6 @@ EOF
     sudo chmod +x /usr/local/bin/dwl-status-runner
 
     # --------------------------------------------------------
-    # 8. slstatus (generador de texto, NO es una barra)
-    # --------------------------------------------------------
-    if command -v slstatus >/dev/null 2>&1; then
-        info "slstatus ya esta instalado en el PATH; se reutiliza."
-    else
-        info "Intentando compilar slstatus (opcional; un fallo no cancela dwl)..."
-        cd "$HOME"
-        if [ ! -d slstatus ] && ! git clone "$SLSTATUS_REPO"; then
-            warn "No pude clonar slstatus; se omite porque es opcional."
-        fi
-
-        if [ -d "$HOME/slstatus" ]; then
-            cd "$HOME/slstatus"
-            fix_owner
-            info "Escribiendo config.h de slstatus (CPU, RAM, hora -- sin depender de wifi/bateria del equipo)..."
-            if write_config config.h <<'SLEOF'
-/* See LICENSE file for copyright and license details. */
-const unsigned int interval = 1000;
-static const char unknown_str[] = "n/a";
-#define MAXLEN 2048
-
-static const struct arg args[] = {
-    /* función format      argumento */
-    { cpu_perc, "CPU: %s%% | ", NULL },
-    { ram_perc, "RAM: %s%% | ", NULL },
-    { datetime, "%s",           "%F %T" },
-};
-SLEOF
-            then
-                if make clean && make && sudo make install; then
-                    info "slstatus instalado. Para verlo en una terminal: slstatus -s"
-                else
-                    warn "No pude compilar/instalar slstatus; dwl continuara sin esta utilidad opcional."
-                fi
-            else
-                warn "No pude escribir la configuracion de slstatus; se omite esta utilidad opcional."
-            fi
-        else
-            warn "No existe ~/slstatus; se omite esta utilidad opcional."
-        fi
-    fi
-
-    # --------------------------------------------------------
     # 9. lf (navegador de archivos)
     # --------------------------------------------------------
     info "Configurando lf..."
@@ -1190,17 +1152,6 @@ EOF
     # pantalla en negro. Se imprime tal cual para que solo haya que descomentar.
     if [ "$GPU_HIBRIDA" -eq 1 ] && [ -n "$GPU_CARDS" ]; then
         sudo sed -i "s|^dwl |# HIBRIDA: si arranca en pantalla negra, descomenta la linea siguiente:\n# export WLR_DRM_DEVICES=$GPU_CARDS\ndwl |" /usr/local/bin/dwl-session
-    fi
-
-    # slstatus -> FIFO de dwl-bar (opt-in, ver el aviso del bug de CPU)
-    if [ "$SLSTATUS_EN_BARRA" = "1" ] && [ "$BARRA_ELEGIDA" = "dwl-bar" ]; then
-        warn "SLSTATUS_EN_BARRA=1: enchufando slstatus al FIFO de dwl-bar."
-        warn "OJO: dwl-bar tiene un bug conocido (issues #18/#19) que dispara la CPU"
-        warn "al 100% cuando algo escribe en ese FIFO. Si notas el equipo caliente,"
-        warn "comenta esta linea en /usr/local/bin/dwl-session."
-        # Ojo: aqui NO se escapa el $ porque el sed va entre comillas simples
-        # (en la parte de reemplazo el $ no es especial; el & si, por eso \&).
-        sudo sed -i 's|^dwl |slstatus -s > "$XDG_RUNTIME_DIR/dwl-bar-0" \&\ndwl |' /usr/local/bin/dwl-session
     fi
 
     info "Instalando el comando 'dwl-rebuild'..."
@@ -1367,7 +1318,6 @@ info "Barra instalada: ${BARRA_ELEGIDA:-ninguna}"
 info ""
 info "Archivos clave para personalizar tu entorno:"
 info "  ~/dwl/config.h                Atajos, colores, reglas, layout de teclado (dwl-rebuild)"
-info "  ~/slstatus/config.h           Generador de estado (opcional)"
 info "  ~/.config/lf/lfrc             Configuración del gestor de archivos"
 info "  /usr/local/bin/dwl-session     Variables y programas al iniciar sesión"
 info "  /etc/greetd/config.toml       greetd + tuigreet"
