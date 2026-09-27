@@ -744,7 +744,7 @@ instalar_base() {
     case "$PAIS_NORM" in
         colombia)                          TZ_INPUT="America/Bogota" ;;
         mexico)                            TZ_INPUT="America/Mexico_City" ;;
-        argentina)                         TZ_INPUT="America/Argentina/Buenos_Aires" ;;
+        argentina)                         TZ_INPUT="America/Buenos_Aires" ;;
         chile)                             TZ_INPUT="America/Santiago" ;;
         peru)                              TZ_INPUT="America/Lima" ;;
         ecuador)                           TZ_INPUT="America/Guayaquil" ;;
