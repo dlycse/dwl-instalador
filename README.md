@@ -44,4 +44,4 @@ deje un Atajos.md en la carpeta dwl-instalador para que veas los atajos predeter
 puedes cambiar el fondo de pantalla cambiandole el nombre a wallpaper.jpg en /Pictures. (dentro encuentras el wallpaper predeterminado puedes borrarlo o puedes cambiarle el nombre y al nuevo fondo de pantalla le cambias el nombre a wallpaper.jpg)
 
 ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
+<img width="1600" height="900" alt="image" src="https://github.com/user-attachments/assets/64108d84-8e2a-4731-8a71-3136811234e4" />
