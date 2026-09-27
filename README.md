@@ -1,4 +1,4 @@
-VERSION 0.7 (BETA) puede contener errores
+VERSION 0.5 (BETA) puede contener errores
 
 SOLO PARA VOID LINUX. Minimo 20gb libres para que no tenga errores de almacenamiento
 
