@@ -171,7 +171,7 @@ GREETER_USER="_greeter"
 # MENU DE SELECCION
 # ==================================================================
 echo "=========================================="
-echo "    Instalador dwl (Void Linux) v0.9.2"
+echo "    Instalador dwl (Void Linux) v0.7"
 echo "=========================================="
 echo "Barra: dwlb (https://github.com/kolunmi/dwlb)"
 echo "Gestor de inicio: greetd + tuigreet"
@@ -284,7 +284,7 @@ instalar_drivers_gpu() {
 # prime-run: ejecuta una aplicacion usando la GPU NVIDIA en equipos hibridos.
 #   prime-run steam
 #   prime-run mpv video.mkv
-# Creado por install-dwl-v0.9.2.sh porque Void no empaqueta nvidia-prime.
+# Creado por install-dwl-v0.7.sh porque Void no empaqueta nvidia-prime.
 export __NV_PRIME_RENDER_OFFLOAD=1
 export __NV_PRIME_RENDER_OFFLOAD_PROVIDER=NVIDIA-G0
 export __GLX_VENDOR_LIBRARY_NAME=nvidia
