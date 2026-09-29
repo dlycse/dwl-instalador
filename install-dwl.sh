@@ -1,18 +1,9 @@
 #!/bin/sh
 # install-dwl-v0.7 .sh v0.7
 # Instalador de dwl (dwm para Wayland) para VOID LINUX.
-#
 # Modos:
 #   1) Basico:   dwl + dwlb, foot, wmenu, swaybg, pipewire
 #   2) Completo: basico + Steam, drivers de GPU (incluido hibridas/Optimus)
-#
-# CAMBIO v0.9.0: la barra ya no es dwl-bar (MadcowOG) sino dwlb, de kolunmi:
-#   https://github.com/kolunmi/dwlb
-# dwlb trae colores configurables, texto de estado con comandos en linea
-# (^fg ^bg ^lm ...), regiones clicables, ocultar tags vacios, escalado HiDPI
-# y control remoto (dwlb -toggle-visibility all, etc.). Se instala tambien su
-# pagina de manual (man 1 dwlb) y un archivo de configuracion propio en
-# ~/.config/dwlb/config, mas un generador de estado en dwlb-status.
 #
 # GESTOR DE INICIO: greetd + tuigreet (unico). lightdm se elimino por completo.
 #
