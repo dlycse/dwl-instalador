@@ -146,7 +146,7 @@ nano Atajos.md
 
 | Archivo | Qué cambia | Cómo se aplica |
 |---|---|---|
-| `~/dwl/config.h` | **Atajos**, colores, reglas de ventanas, teclado | `dwl-rebuild` |
+| `~/dwl/config.h` | **Atajos**, colores, reglas de ventanas, teclado | `sudo make clean install` |
 | `~/.config/dwlb/config` | Fuente y colores de la **barra** | Solo reinicia la sesión (no recompila) |
 | `/usr/local/bin/dwlb-status` | Los bloques de estado de la barra (CPU, RAM, batería…) | Solo reinicia la sesión |
 | `~/dwlb/config.h` | Valores compilados de dwlb | `dwlb-rebuild` |
