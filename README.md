@@ -206,6 +206,7 @@ Este instalador no reinventa nada: une y configura proyectos existentes.
 | **grim** — capturas | https://github.com/emersion/grim |
 
 > 💡 ¿Quieres saber más de la barra? `man 1 dwlb` o visita https://github.com/kolunmi/dwlb
+
 > 💡 ¿Quieres saber más del navegador de archivos? visita https://github.com/gokcehan/lf
 ---
 
