@@ -1,226 +1,236 @@
+# ⌨️ Atajos de teclado — dwl + dwlb
 
-==============================================================================
- ATAJOS DE TECLADO - dwl + dwlb
-==============================================================================
-  Lista completa de los atajos que deja configurados el instalador.
-  "Super" es la tecla del logo de Windows (en teclados Mac es Command).
+Lista **completa y real** de los atajos que deja configurados el instalador.
 
-------------------------------------------------------------------------------
- SI ACABAS DE INSTALAR, CON ESTO YA ALCANZA
-------------------------------------------------------------------------------
+> **¿Qué es "Super"?** Es la tecla con el logo de **Windows** ⊞ (en teclados de Mac es **⌘ Command**).
 
-  Super+Enter.................. abrir una terminal (foot)
-  Super+d...................... lanzador de programas (wmenu)
-  Super+q...................... cerrar la ventana actual
-  Super+r...................... gestor de archivos (lf)
-  Super+b...................... navegador (Firefox)
-  Super+Shift+e................ cerrar sesion (volver al login)
-  Ctrl+Alt+F1.................. consola de emergencia si algo se congela
+> 📄 **¿Estás leyendo esto desde la terminal?** El instalador genera una versión en
+> **texto plano** pensada para `nano`, alineada y sin markdown:
+>
+> ```bash
+> nano ~/Atajos.txt
+> ```
+>
+> Este archivo (`Atajos.md`) es el mismo contenido, pero con formato para leerlo en GitHub.
 
-  Con esos siete ya puedes manejarte. El resto lo vas aprendiendo sobre la
-  marcha.
+---
 
-------------------------------------------------------------------------------
- GLOSARIO RAPIDO
-------------------------------------------------------------------------------
+## 🆘 Si acabas de instalar, con esto ya puedes usar el sistema
 
-  tag.......................... un "escritorio virtual"; hay 9 y cada uno
-                                guarda sus ventanas
-  area maestra................. la ventana grande y principal del mosaico
-  layout....................... la forma en que se reparten las ventanas
-  monocle...................... una sola ventana ocupando toda la pantalla
-  flotante..................... ventana fuera del mosaico; la mueves a mano
-  barra........................ la linea de arriba (dwlb): tags, layout, CPU,
-                                RAM, hora
-  gaps......................... separacion entre ventanas (vienen
-                                DESACTIVADOS)
+| Quieres… | Presiona |
+|---|---|
+| Abrir una **terminal** | `Super` + `Enter` |
+| Abrir un **programa** (lanzador) | `Super` + `D` |
+| **Cerrar** la ventana que estás usando | `Super` + `Q` |
+| Ver tus **archivos** | `Super` + `R` |
+| Abrir el **navegador** | `Super` + `B` |
+| **Cerrar la sesión** (volver al login) | `Super` + `Shift` + `E` |
+| Ir a una **consola de emergencia** si algo se congela | `Ctrl` + `Alt` + `F1` |
 
-  dwl es un gestor de ventanas en mosaico: no apila ventanas como Windows, las
-  reparte automaticamente por la pantalla.
+Con esos siete ya puedes manejarte. El resto lo vas aprendiendo sobre la marcha.
 
-------------------------------------------------------------------------------
- PROGRAMAS
-------------------------------------------------------------------------------
+---
 
-  Super+d...................... lanzador de aplicaciones (wmenu)
-  Super+Enter.................. terminal (foot)
-  Super+t...................... terminal (foot), atajo alternativo
-  Super+b...................... navegador (Firefox)
-  Super+r...................... gestor de archivos (lf), se abre dentro de
-                                foot
+## 📖 Mini glosario
 
-------------------------------------------------------------------------------
- VENTANAS
-------------------------------------------------------------------------------
+Un gestor de ventanas **mosaico** (*tiling*) no apila ventanas como Windows: las **reparte** automáticamente por la pantalla.
 
-  Super+q...................... cerrar la ventana enfocada
-  Super+j...................... enfocar la siguiente ventana
-  Super+Abajo.................. enfocar la siguiente ventana (igual que
-                                Super+j)
-  Super+k...................... enfocar la ventana anterior
-  Super+Arriba................. enfocar la ventana anterior (igual que
-                                Super+k)
-  Super+h...................... achicar el area maestra
-  Super+l...................... agrandar el area maestra
-  Super+i...................... una ventana mas en el area maestra
-  Super+Shift+t................ volver la ventana flotante (o devolverla al
-                                mosaico)
-  Super+Shift+Enter............ traer la ventana actual al area maestra (zoom)
+| Palabra | Qué significa |
+|---|---|
+| **Tag** | Un "escritorio virtual". Hay 9 y cada uno guarda sus propias ventanas. |
+| **Área maestra** | La ventana grande y principal, normalmente a la izquierda. |
+| **Layout** | La forma de repartir las ventanas. |
+| **Monocle** | Layout donde **una sola ventana** ocupa toda la pantalla. |
+| **Flotante** | Ventana fuera del mosaico: la mueves y redimensionas a mano. |
+| **Barra** | La línea de arriba ([**dwlb**](https://github.com/kolunmi/dwlb)): tags, layout, CPU, RAM, volumen, batería y hora. |
+| **Gaps** | Separación entre ventanas. **Vienen desactivados** — ver más abajo. |
 
-------------------------------------------------------------------------------
- BARRA (dwlb)
-------------------------------------------------------------------------------
+---
 
-  Super+w...................... ocultar o mostrar la barra
-  Super+Shift+w................ mover la barra arriba o abajo
+## 🚀 Programas
 
-  La barra es dwlb (https://github.com/kolunmi/dwlb). Muestra los tags, el
-  layout activo, CPU, RAM, volumen, bateria y la hora.
+| Atajo | Qué abre |
+|---|---|
+| `Super` + `D` | **Lanzador de aplicaciones** (wmenu) |
+| `Super` + `Enter` | **Terminal** (foot) |
+| `Super` + `T` | **Terminal** (foot) — atajo alternativo |
+| `Super` + `B` | **Firefox** |
+| `Super` + `R` | **lf**, gestor de archivos (se abre dentro de foot) |
 
-------------------------------------------------------------------------------
- LAYOUTS
-------------------------------------------------------------------------------
+---
 
-  []=.......................... mosaico: area maestra + columna de ventanas
-                                (el inicial)
-  "><>"........................ flotante: cada ventana se mueve y redimensiona
-                                a mano
-  [M].......................... monocle: una sola ventana ocupando todo
+## 🪟 Ventanas
 
-  Super+Space.................. rotar al layout siguiente o volver al anterior
-  Super+f...................... ir directo a monocle
-  Super+Shift+f................ pantalla completa real, sin barra (video,
-                                juegos)
+| Atajo | Qué hace |
+|---|---|
+| `Super` + `Q` | **Cerrar** la ventana enfocada |
+| `Super` + `J` &nbsp;o&nbsp; `Super` + `↓` | Enfocar la **siguiente** ventana |
+| `Super` + `K` &nbsp;o&nbsp; `Super` + `↑` | Enfocar la ventana **anterior** |
+| `Super` + `H` | Hacer el área maestra **más angosta** |
+| `Super` + `L` | Hacer el área maestra **más ancha** |
+| `Super` + `I` | Meter **una ventana más** en el área maestra |
+| `Super` + `Shift` + `T` | Volver la ventana **flotante** (o devolverla al mosaico) |
+| `Super` + `Shift` + `Enter` | Traer la ventana actual **al área maestra** (*zoom*) |
 
-    Nota: El simbolo del layout activo se ve en la barra. El layout flotante
-    ("><>") no tiene tecla propia: se llega rotando con Super+Space.
+---
 
-------------------------------------------------------------------------------
- TAGS (los 9 escritorios)
-------------------------------------------------------------------------------
+## 📐 Layouts
 
-  Super+1 ... 9................ ir a ese tag
-  Super+Shift+1 ... 9.......... mover la ventana actual a ese tag
-  Super+Ctrl+1 ... 9........... ver ese tag junto con el actual
-  Super+Ctrl+Shift+1..9........ la ventana aparece en ambos tags sin moverla
-  Super+Tab.................... volver al tag anterior
-  Super+0...................... ver los 9 tags a la vez
+| Símbolo en la barra | Layout |
+|---|---|
+| `[]=` | **Mosaico**: área maestra + columna de ventanas (el inicial) |
+| `"><>"` | **Flotante**: cada ventana se mueve y redimensiona a mano |
+| `[M]` | **Monocle**: una sola ventana ocupando todo |
 
-    Nota: En teclado latam/es, Shift+numero produce !"#$%&/() . El instalador
-    ya registro las dos variantes, asi que Super+Shift+1..9 funciona en los
-    tres layouts de teclado.
+| Atajo | Qué hace |
+|---|---|
+| `Super` + `Space` | **Rotar** al layout siguiente o volver al anterior |
+| `Super` + `F` | Ir directo a **monocle** |
+| `Super` + `Shift` + `F` | **Pantalla completa real**, sin barra (video, juegos) |
 
-  Idea de uso: terminal en el tag 1, navegador en el 2, musica en el 3, chat
-  en el 4.
+> 📌 El layout **flotante** (`"><>"`) no tiene tecla propia: se llega rotando con `Super` + `Space`.
 
-------------------------------------------------------------------------------
- MONITORES
-------------------------------------------------------------------------------
+---
 
-  Super+,...................... enfocar el monitor de la izquierda
-  Super+....................... enfocar el monitor de la derecha
-  Super+Shift+<................ enviar la ventana al monitor de la izquierda
-  Super+Shift+>................ enviar la ventana al monitor de la derecha
+## 🔢 Tags (los 9 escritorios)
 
-    Nota: Tambien estan registrados Super+Shift+; y Super+Shift+: como
-    equivalentes de < y >, porque en teclado latam/es Shift+coma y Shift+punto
-    no producen esos simbolos.
+| Atajo | Qué hace |
+|---|---|
+| `Super` + `1` … `9` | **Ir** a ese tag |
+| `Super` + `Shift` + `1` … `9` | **Mover** la ventana actual a ese tag |
+| `Super` + `Ctrl` + `1` … `9` | **Ver dos tags a la vez** (el actual + ese) |
+| `Super` + `Ctrl` + `Shift` + `1`…`9` | La ventana **aparece en ambos** tags sin moverla |
+| `Super` + `Tab` | Volver al **tag anterior** |
+| `Super` + `0` | Ver **los 9 tags a la vez** |
 
-------------------------------------------------------------------------------
- GAPS - DESACTIVADOS POR DEFECTO
-------------------------------------------------------------------------------
+> 💡 **Teclado latam/es:** `Shift` + número produce `!"#$%&/()`. El instalador ya registró
+> las dos variantes, así que `Super` + `Shift` + `1`…`9` funciona en los tres layouts de teclado.
 
-  dwl NO trae gaps: esa funcion viene del parche vanitygaps, igual que en dwm.
-  Por eso estas teclas estan COMENTADAS en config.h y no hacen nada.
+**Idea de uso:** terminal en el tag 1, navegador en el 2, música en el 3, chat en el 4.
 
-  Si algun dia aplicas el parche, descomenta el bloque en ~/dwl/config.h,
-  ejecuta dwl-rebuild y tendras:
+---
 
-  Super+Ctrl+u................. aumentar la separacion entre ventanas
-  Super+Ctrl+Shift+u........... disminuir la separacion
-  Super+Ctrl+0................. activar o desactivar gaps
-  Super+Ctrl+Shift+=........... restablecer los gaps a su valor inicial
+## 🖥️ Varios monitores
 
-------------------------------------------------------------------------------
- TECLAS ESPECIALES (sin Super)
-------------------------------------------------------------------------------
+| Atajo | Qué hace |
+|---|---|
+| `Super` + `,` | Mover el foco al monitor de la **izquierda** |
+| `Super` + `.` | Mover el foco al monitor de la **derecha** |
+| `Super` + `Shift` + `<` | **Enviar la ventana** al monitor de la izquierda |
+| `Super` + `Shift` + `>` | **Enviar la ventana** al monitor de la derecha |
 
-  Subir volumen................ sube 3 %
-  Bajar volumen................ baja 3 %
-  Mute......................... silenciar o restaurar
-  Brillo arriba................ sube 5 %
-  Brillo abajo................. baja 5 %
-  Print / Impr Pant............ captura de pantalla (grim) en ~/Pictures
+> 💡 También están registrados `Super` + `Shift` + `;` y `Super` + `Shift` + `:` como equivalentes
+> de `<` y `>`, porque en teclado latam/es `Shift` + coma/punto no produce esos símbolos.
 
-------------------------------------------------------------------------------
- SALIR Y CONSOLAS
-------------------------------------------------------------------------------
+---
 
-  Super+Shift+e................ cerrar la sesion de dwl (vuelves a tuigreet)
-  Ctrl+Alt+Backspace........... cerrar la sesion (atajo alternativo)
-  Ctrl+Alt+F1 ... F12.......... cambiar de consola (tty)
+## 📏 Gaps — ⚠️ desactivados por defecto
 
-  AVISO: no borres los Ctrl+Alt+Fx de tu config.h. Si dwl se congela son la
-  unica manera de salir a una consola para hacer 'sudo reboot'.
+**dwl no trae gaps**: esa función viene del parche *vanitygaps*, igual que en dwm.
+Por eso estas teclas están **comentadas** en `config.h` y **no hacen nada** todavía.
 
-------------------------------------------------------------------------------
- RATON SOBRE LAS VENTANAS
-------------------------------------------------------------------------------
+Si algún día aplicas el parche, descomenta el bloque en `~/dwl/config.h`, ejecuta `dwl-rebuild` y tendrás:
 
-  Super+clic izquierdo......... mover la ventana (arrastrando)
-  Super+clic central........... alternar ventana flotante
-  Super+clic derecho........... redimensionar la ventana (arrastrando)
+| Atajo | Qué haría |
+|---|---|
+| `Super` + `Ctrl` + `U` | **Aumentar** la separación entre ventanas |
+| `Super` + `Ctrl` + `Shift` + `U` | **Disminuir** la separación |
+| `Super` + `Ctrl` + `0` | **Activar / desactivar** gaps |
+| `Super` + `Ctrl` + `Shift` + `=` | **Restablecer** los gaps a su valor inicial |
 
-------------------------------------------------------------------------------
- RATON SOBRE LA BARRA
-------------------------------------------------------------------------------
+---
 
-  clic izquierdo en la fecha... abre un calendario (cal -3) en foot
-  clic central en el estado.... abre una terminal (foot)
-  clic en los numeros de tag... SOLO funciona si dwlb esta en modo -ipc
+## 🔊 Teclas especiales (sin Super)
 
-  Para saber en que modo esta corriendo tu barra:
+| Tecla | Qué hace |
+|---|---|
+| Subir volumen | +3 % |
+| Bajar volumen | −3 % |
+| Mute | Silenciar o restaurar |
+| Brillo arriba | +5 % |
+| Brillo abajo | −5 % |
+| `Print` / `Impr Pant` | **Captura de pantalla** (grim) → se guarda en `~/Pictures` |
 
-        pgrep -a dwlb
+---
 
-  dwlb -ipc.................... los clics en los tags funcionan
-  dwlb -no-ipc................. no funcionan; usa Super+1 ... 9
+## 🚪 Salir y consolas
 
-    Nota: Los clics del estado (calendario y terminal) funcionan en los dos
-    modos, porque van incrustados en el texto que genera
-    /usr/local/bin/dwlb-status.
+| Atajo | Qué hace |
+|---|---|
+| `Super` + `Shift` + `E` | **Cerrar la sesión de dwl** (vuelves a tuigreet) |
+| `Ctrl` + `Alt` + `Backspace` | Cerrar la sesión (atajo alternativo) |
+| `Ctrl` + `Alt` + `F1` … `F12` | Cambiar de **consola (tty)** |
 
-  El instalador detecta el modo solo y te lo dice al terminar:
-    - "dwl incluye el protocolo IPC: dwlb usara -ipc (clic en los tags
-    funcional)"
-    - "dwl sin parche IPC: dwlb leera el estado por stdin (-no-ipc)"
+> ⚠️ **No borres los `Ctrl` + `Alt` + `Fx` de tu `config.h`.**
+> Si dwl se congela, son la única manera de salir a una consola para hacer `sudo reboot`.
 
-------------------------------------------------------------------------------
- CAMBIAR ESTOS ATAJOS
-------------------------------------------------------------------------------
+---
 
-  Paso 1....................... editar ~/dwl/config.h y cambiar la tecla
-  Paso 2....................... ejecutar dwl-rebuild (recompila e instala)
-  Paso 3....................... Super+Shift+e para salir y volver a entrar
+## 🖱️ Ratón sobre las ventanas
 
-------------------------------------------------------------------------------
- ARCHIVOS PARA PERSONALIZAR
-------------------------------------------------------------------------------
+| Acción | Efecto |
+|---|---|
+| `Super` + **clic izquierdo** y arrastrar | **Mover** la ventana |
+| `Super` + **clic central** | Alternar ventana **flotante** |
+| `Super` + **clic derecho** y arrastrar | **Redimensionar** la ventana |
 
-  ~/dwl/config.h............... atajos, colores, reglas de ventanas, teclado
-  ~/.config/dwlb/config........ fuente y colores de la barra (sin recompilar)
-  /usr/local/bin/dwlb-status... que se muestra en la barra y sus clics
-  ~/.config/lf/lfrc............ comportamiento del gestor de archivos lf
-  /usr/local/bin/dwl-session... programas y variables al iniciar sesion
+---
 
-------------------------------------------------------------------------------
- REFERENCIAS
-------------------------------------------------------------------------------
+## 🖱️ Ratón sobre la barra (dwlb)
 
-  dwlb (la barra).............. https://github.com/kolunmi/dwlb
-  dwl (compositor)............. https://codeberg.org/dwl/dwl
-  lf (archivos)................ https://github.com/gokcehan/lf
+| Acción | Efecto |
+|---|---|
+| **Clic izquierdo** sobre la **fecha/hora** | Abre un **calendario** (`cal -3`) en foot |
+| **Clic central** en la zona de **estado** | Abre una **terminal** (foot) |
+| **Clic** en los **números de tag** | Solo funciona si dwlb está en modo `-ipc` |
 
-  Manuales en tu terminal: man 1 dwlb | man 1 foot | man 1 lf
+### ¿Y clicar los números de tag con el ratón?
 
-==============================================================================
+Depende de cómo se compiló dwl. El instalador lo detecta solo y te lo dice al terminar:
+
+| Si al instalar viste… | Entonces… |
+|---|---|
+| `dwl incluye el protocolo IPC: dwlb usara -ipc (clic en los tags funcional)` | ✅ **Sí** puedes clicar los tags |
+| `dwl sin parche IPC: dwlb leera el estado por stdin (-no-ipc)` | ❌ No funcionan; usa `Super` + `1`…`9` |
+
+Para comprobarlo ahora mismo:
+
+```bash
+pgrep -a dwlb
+```
+
+- `dwlb -ipc` → los clics en los tags **funcionan**
+- `dwlb -no-ipc` → **no** funcionan
+
+> Los clics del **estado** (calendario y terminal) funcionan **en los dos modos**, porque van
+> incrustados en el texto que genera `/usr/local/bin/dwlb-status`.
+
+---
+
+## 🎨 Cambiar estos atajos
+
+```bash
+nano ~/dwl/config.h     # 1. busca la tecla y cámbiala
+dwl-rebuild             # 2. recompila e instala
+# 3. Super + Shift + E para salir, y vuelve a entrar
+```
+
+| Archivo | Qué se cambia ahí |
+|---|---|
+| `~/dwl/config.h` | **Atajos**, colores, reglas de ventanas, teclado |
+| `~/.config/dwlb/config` | Fuente y colores de la **barra** (no hace falta recompilar) |
+| `/usr/local/bin/dwlb-status` | Qué se muestra en la barra (CPU, RAM, volumen, batería, reloj) y sus clics |
+| `~/.config/lf/lfrc` | Comportamiento del gestor de archivos `lf` |
+| `/usr/local/bin/dwl-session` | Programas y variables al iniciar sesión |
+
+---
+
+## 🔗 Referencias
+
+| Proyecto | Enlace |
+|---|---|
+| **dwlb** (la barra) | https://github.com/kolunmi/dwlb |
+| **dwl** (el compositor) | https://codeberg.org/dwl/dwl |
+| **lf** (gestor de archivos) | https://github.com/gokcehan/lf |
+
+Manuales en tu terminal: `man 1 dwlb` · `man 1 foot` · `man 1 lf`
