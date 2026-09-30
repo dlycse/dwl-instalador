@@ -158,7 +158,7 @@ nano Atajos.md
 
 ```bash
 nano ~/dwl/config.h      # 1. edita la tecla
-dwl-rebuild              # 2. recompila e instala
+sudo make clean install  # 2. recompila e instala
 # 3. Super+Shift+E para salir y vuelve a entrar
 ```
 
