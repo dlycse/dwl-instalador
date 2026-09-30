@@ -211,7 +211,7 @@ pgrep -a dwlb
 
 ```bash
 nano ~/dwl/config.h     # 1. busca la tecla y cámbiala
-dwl-rebuild             # 2. recompila e instala
+sudo make clean install # 2. recompila e instala
 # 3. Super + Shift + E para salir, y vuelve a entrar
 ```
 
