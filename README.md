@@ -210,6 +210,3 @@ Este instalador no reinventa nada: une y configura proyectos existentes.
 ---
 
 *Hecho para Void Linux. Si encuentras un error, abre un issue en el repositorio.*
-
-||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-<img width="1600" height="900" alt="image" src="https://github.com/user-attachments/assets/64108d84-8e2a-4731-8a71-3136811234e4" />
