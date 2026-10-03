@@ -3,7 +3,7 @@
 Instalador de **dwl** (el equivalente a *dwm*, pero para **Wayland**) ya preconfigurado para **Void Linux**.
 
 > ### ⚠️ VERSIÓN 0.7 (BETA) — puede contener errores
-> **SOLO PARA VOID LINUX.** Necesitas **mínimo 20 GB libres** para evitar errores de almacenamiento.
+> **SOLO PARA VOID LINUX.** Necesitas **mínimo 20 GB libres + 1 GB para el efi** para evitar errores de almacenamiento.
 
 <img width="1600" height="900" alt="Captura del escritorio dwl con la barra dwlb" src="https://github.com/user-attachments/assets/64108d84-8e2a-4731-8a71-3136811234e4" />
 
