@@ -300,13 +300,6 @@ EOF
 #
 # Dependencias de dwlb (README del autor):
 #   libwayland-client, libwayland-cursor, pixman, fcft
-compilar_dwlb() {
-    info "Instalando dependencias de dwlb (pixman, fcft, tllist)..."
-    if ! sudo xbps-install -Sy pixman pixman-devel fcft fcft-devel tllist \
-            freetype-devel fontconfig-devel harfbuzz-devel utf8proc-devel; then
-        warn "Alguna dependencia de dwlb fallo; intento compilar de todas formas."
-    fi
-
     cd "$HOME" || return 1
     if [ -d dwlb ]; then
         info "Ya existe ~/dwlb: se reutiliza el clon existente."
@@ -744,7 +737,7 @@ instalar_base() {
     # --------------------------------------------------------
     # 3. Deteccion de GPUs (antes de escribir el wrapper)
     # --------------------------------------------------------
-        detectar_hardware
+    detectar_hardware
 
     # --------------------------------------------------------
     # 4. Zona horaria
