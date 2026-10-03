@@ -134,7 +134,7 @@ WALLPAPER_PATH="$WALLPAPER_DIR/wallpaper.jpg"
 WALLPAPER_URL="https://wallpapercave.com/download/empty-error-wallpapers-wp8330753"
 
 # Apariencia de dwlb (paleta Catppuccin Mocha, igual que config.h de dwl)
-DWLB_FONT="${DWLB_FONT:-monospace:size=9}"
+DWLB_FONT="${DWLB_FONT:-monospace:size=7}"
 DWLB_PAD="${DWLB_PAD:-0}"
 DWLB_ACTIVE_FG="#ffffff"
 DWLB_ACTIVE_BG="#89b4fa"
