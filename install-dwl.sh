@@ -1,5 +1,5 @@
 #!/bin/sh
-# install-dwl-v0.7 .sh v0.7
+# install-dwl-v0.8
 # Instalador de dwl (dwm para Wayland) para VOID LINUX.
 # Modos:
 #   1) Basico:   dwl + dwlb, foot, wmenu, swaybg, pipewire
@@ -597,7 +597,33 @@ iniciar_greetd() {
         *)     warn "runit no confirma que greetd este activo: $ESTADO_GREETD" ;;
     esac
 }
+# ==================================================================
+# FUNCION: detectar hardware (VM y fuente del lanzador)
+# ==================================================================
+detectar_hardware() {
+    # --- Maquina virtual: en x86 el kernel expone el flag "hypervisor" ---
+    ES_VM=0
+    if grep -qw hypervisor /proc/cpuinfo 2>/dev/null; then
+        ES_VM=1
+        VM_NOMBRE=$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo "desconocida")
+        warn "Maquina virtual detectada ($VM_NOMBRE)."
+        warn "Si dwl no arranca con 'couldn't create renderer', activa la aceleracion 3D"
+        warn "en la VM. Aun sin ella, el wrapper reintenta solo con render por software."
+    fi
 
+    # --- Fuente del lanzador (wmenu): la misma que la barra ---
+    WMENU_SIZE="${DWLB_FONT##*size=}"
+    case "$WMENU_SIZE" in
+        ''|*[!0-9]*) WMENU_SIZE=11 ;;
+    esac
+    info "Fuente del lanzador wmenu: monospace $WMENU_SIZE"
+
+    # --- Variables extra para el wrapper de sesion ---
+    EXTRA_ENV=""
+    if [ "$ES_VM" -eq 1 ]; then
+        EXTRA_ENV="export WLR_NO_HARDWARE_CURSORS=1"
+    fi
+}
 # ==================================================================
 # FUNCION: instalacion basica de dwl
 # ==================================================================
@@ -718,7 +744,7 @@ instalar_base() {
     # --------------------------------------------------------
     # 3. Deteccion de GPUs (antes de escribir el wrapper)
     # --------------------------------------------------------
-    detectar_gpus
+        detectar_hardware
 
     # --------------------------------------------------------
     # 4. Zona horaria
@@ -1310,11 +1336,27 @@ iniciar_daemon_usuario wireplumber wireplumber
 iniciar_daemon_usuario pipewire-pulse pipewire-pulse
 
 # dwl-status-runner inicia dwlb y swaybg cuando el socket Wayland ya existe.
+$EXTRA_ENV
+INICIO=\$(date +%s)
 $BARRA_CMD &
 DWL_PID=\$!
 wait "\$DWL_PID"
 DWL_STATUS=\$?
 DWL_PID=""
+
+# Si dwl muere en los primeros segundos (p. ej. "couldn't create renderer" en
+# una VM sin 3D), se reintenta una vez con render por software.
+if [ "\$DWL_STATUS" -ne 0 ] && [ -z "\$WLR_RENDERER" ] && [ \$(( \$(date +%s) - INICIO )) -lt 5 ]; then
+    printf 'dwl-session: dwl fallo al arrancar; reintento con WLR_RENDERER=pixman\n' >&2
+    export WLR_RENDERER=pixman
+    export WLR_NO_HARDWARE_CURSORS=1
+    export LIBGL_ALWAYS_SOFTWARE=1
+    $BARRA_CMD &
+    DWL_PID=\$!
+    wait "\$DWL_PID"
+    DWL_STATUS=\$?
+    DWL_PID=""
+fi
 limpiar_daemons_usuario
 trap - EXIT HUP INT TERM
 exit "\$DWL_STATUS"
