@@ -1275,25 +1275,65 @@ escribir_supervisor() {
 
 #!/bin/sh
 # dwl-status-runner: lo arranca dwl con -s cuando el compositor ya esta listo.
-#   - lee ~/.config/dwlb/config y se lo pasa a dwlb como argumentos
-#     (dwlb NO lee archivos de configuracion: solo linea de comandos)
-#   - arranca UNA sola barra dwlb y le da el estado (CPU, RAM, volumen, reloj)
-#   - si la barra no arranca en el modo previsto (-ipc / -no-ipc), prueba el otro
-#   - todo lo que ocurre queda en el registro de la sesion (ver LOG)
+# Se puede lanzar de dos formas:
+#   - automaticamente: dwl -s /usr/local/bin/dwl-status-runner   (lo hace dwl-session)
+#   - a mano, para probar:   dwl -s /usr/local/bin/dwl-status-runner
+#
+# Hace tres cosas: prepara el entorno minimo que dwlb necesita, arranca UNA
+# barra dwlb con las opciones de ~/.config/dwlb/config y le da el estado
+# (CPU, RAM, volumen, reloj). Todo queda en el registro de la sesion (LOG).
 #
 # Lo que conviene saber de dwlb (leido en su codigo fuente):
-#   * sin -ipc, dwlb lee el estado de su ENTRADA ESTANDAR y, si esa entrada se
-#     cierra (EOF), la barra TERMINA. Por eso el estado se le da por tuberia y
-#     detras hay un bucle que la vuelve a abrir si el generador muriera.
-#   * con -ipc, dwlb NO lee stdin: el estado se le manda por su socket con
+#   * necesita XDG_RUNTIME_DIR; si no esta definido, aborta con
+#     "Could not retrieve XDG_RUNTIME_DIR" y no dibuja nada.
+#   * sin -ipc lee el estado de su ENTRADA ESTANDAR y, si esa entrada se cierra
+#     (EOF), la barra termina. Por eso el estado va por tuberia y el generador
+#     la mantiene abierta.
+#   * con -ipc NO lee stdin: el estado se le manda por su socket con
 #     'dwlb -status-stdin all' (eso funciona igual con y sin ipc).
-#   * con -ipc y un dwl SIN el parche IPC, dwlb aborta con
-#     "Compositor does not support all needed protocols" y no dibuja nada.
-#   * sin ipc los tags no pueden reflejar el estado de dwl: se le pasan con
-#     -tags y sin -hide-vacant-tags para que al menos se vean.
+#   * con -ipc y un dwl SIN el parche IPC aborta con
+#     "Compositor does not support all needed protocols".
+#   * sin ipc no puede saber en que tag estas: los muestra con -tags, fijos.
+
+# --- 0. Entorno minimo garantizado -----------------------------------------
+# runit arranca los servicios con PATH=/usr/bin:/usr/sbin (ver /etc/runit/2) y
+# greetd/tuigreet no leen /etc/profile, asi que /usr/local/bin (donde viven
+# dwlb y dwlb-status) NO esta en el PATH de la sesion. Se anade aqui, y no solo
+# en dwl-session, porque este script tambien se puede lanzar a mano.
+for DIR_BIN in /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin; do
+    case ":$PATH:" in
+        *":$DIR_BIN:"*) ;;
+        *) PATH="${PATH:+$PATH:}$DIR_BIN" ;;
+    esac
+done
+export PATH
+
+# dwlb necesita XDG_RUNTIME_DIR para crear su socket.
+if [ -z "$XDG_RUNTIME_DIR" ] || [ ! -d "$XDG_RUNTIME_DIR" ] || [ ! -w "$XDG_RUNTIME_DIR" ]; then
+    UID_RUN=$(id -u)
+    for CAND in "/run/user/$UID_RUN" "$HOME/.xdg-runtime"; do
+        if [ -d "$CAND" ] && [ -w "$CAND" ]; then
+            XDG_RUNTIME_DIR="$CAND"
+            break
+        fi
+        if mkdir -p "$CAND" 2>/dev/null && chmod 0700 "$CAND" 2>/dev/null && [ -w "$CAND" ]; then
+            XDG_RUNTIME_DIR="$CAND"
+            break
+        fi
+    done
+    if [ -n "$XDG_RUNTIME_DIR" ]; then
+        export XDG_RUNTIME_DIR
+    fi
+fi
 
 LOG="${XDG_RUNTIME_DIR:-/tmp}/dwl-session-$(id -u).log"
 log() { printf '%s dwl-status-runner: %s\n' "$(date '+%H:%M:%S')" "$1" >> "$LOG" 2>/dev/null || true; }
+
+# Binarios resueltos una sola vez (por si el PATH no los trae).
+DWLB_BIN=$(command -v dwlb 2>/dev/null || true)
+if [ -z "$DWLB_BIN" ] || [ ! -x "$DWLB_BIN" ]; then DWLB_BIN=/usr/local/bin/dwlb; fi
+DWLB_STATUS_BIN=$(command -v dwlb-status 2>/dev/null || true)
+if [ -z "$DWLB_STATUS_BIN" ] || [ ! -x "$DWLB_STATUS_BIN" ]; then DWLB_STATUS_BIN=/usr/local/bin/dwlb-status; fi
 
 CONF="${XDG_CONFIG_HOME:-$HOME/.config}/dwlb/config"
 HIJOS=""
@@ -1302,12 +1342,6 @@ PID_ESTADO=""
 OPCIONES_DWLB=""
 TAGS_DEF='@TAGS_DEF@'
 
-# OJO: aqui NO se usa 'wait': en dash, 'wait PID' de un proceso que forma
-# parte de una tuberia espera a TODO el trabajo, y el generador de estado
-# (que sigue vivo a proposito) bloquearia la limpieza para siempre.
-# Los procesos se matan y, como el supervisor termina justo despues, el
-# sistema recoge los que queden. Los generadores que se quedan sin lector
-# mueren solos: al escribir en una tuberia cerrada reciben SIGPIPE.
 limpiar_hijos() {
     for PID_HIJO in $HIJOS; do
         kill "$PID_HIJO" 2>/dev/null || true
@@ -1317,6 +1351,10 @@ limpiar_hijos() {
     PID_ESTADO=""
 }
 
+# OJO: aqui no se usa 'wait': en dash, 'wait PID' de un proceso que forma parte
+# de una tuberia espera a TODA la tuberia, y el generador de estado (que sigue
+# vivo a proposito) bloquearia la limpieza. Los generadores que se queden sin
+# lector mueren solos al recibir SIGPIPE cuando escriben.
 trap limpiar_hijos EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
@@ -1324,12 +1362,23 @@ trap 'exit 143' TERM
 
 esta_vivo() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null; }
 
+log "inicio: pid=$$ PATH=$PATH"
+log "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-(SIN DEFINIR)}"
+log "dwlb=$DWLB_BIN  dwlb-status=$DWLB_STATUS_BIN"
+[ -x "$DWLB_BIN" ] || log "ERROR: no encuentro el ejecutable dwlb. Reinstalalo con install-dwl.sh"
+
+# dwl le da a la orden de -s un tubo por su salida estandar (ver run() en dwl.c):
+# si nadie lo lee y dwl escribiera algo, dwl se quedaria bloqueado. Se vacia.
+exec 3<&0
+cat <&3 >/dev/null 2>&1 &
+HIJOS="$HIJOS $!"
+
 # --- Opciones de la barra desde el archivo de configuracion ----------------
 # Solo se aceptan opciones que aparezcan en 'dwlb -h': una opcion desconocida
 # hace que dwlb no arranque, y eso dejaria la sesion sin barra.
 leer_opciones_dwlb() {
     [ -f "$CONF" ] || return 0
-    AYUDA=$(dwlb -h 2>&1 || true)
+    AYUDA=$("$DWLB_BIN" -h 2>&1 || true)
     LISTA=$(printf '%s\n' "$AYUDA" | tr ' \t' '\n\n' | grep '^-' || true)
     N=0
     while IFS= read -r LINEA || [ -n "$LINEA" ]; do
@@ -1337,8 +1386,8 @@ leer_opciones_dwlb() {
         CLAVE="${LINEA%% *}"
         case "$CLAVE" in
             # Estas NO son opciones de arranque: son ORDENES que dwlb manda a
-            # una barra que ya esta corriendo. Si se pasan al arrancar, dwlb
-            # envia la orden y termina sin dibujar nada.
+            # una barra que ya esta corriendo. Al arrancar, dwlb enviaria la
+            # orden y terminaria sin dibujar nada.
             -status|-status-stdin|-title|-show|-hide|-toggle-visibility|\
             -set-top|-set-bottom|-toggle-location|-target-socket)
                 log "opcion ignorada (es una orden, no una opcion de arranque): $LINEA"
@@ -1356,38 +1405,70 @@ leer_opciones_dwlb() {
     log "$N opciones tomadas de $CONF:$OPCIONES_DWLB"
 }
 
+# --- Estado: quien se lo da a la barra ------------------------------------
+# Con ipc la barra NO lee stdin: el texto se le manda por su socket con
+# 'dwlb -status-stdin all'. Cada vuelta abre un dwlb nuevo en modo orden, asi
+# que si el socket aun no existia, el intento siguiente (5 s) ya lo encuentra.
+generador_estado_ipc() {
+    while :; do
+        "$DWLB_STATUS_BIN" 2>/dev/null | "$DWLB_BIN" -status-stdin all >/dev/null 2>&1
+        sleep 5
+    done &
+}
+
 # --- Arranque de la barra --------------------------------------------------
 # $1 = -ipc | -no-ipc    $2 = opciones extra para este intento
 # Deja la barra en PID_BARRA y devuelve 0 si sigue viva un segundo despues.
 arrancar_barra() {
     MODO_BARRA="$1"
     EXTRA="$2"
-    if [ "$MODO_BARRA" = "-ipc" ]; then
-        # shellcheck disable=SC2086
-        dwlb $OPCIONES_DWLB $EXTRA -ipc </dev/null >>"$LOG" 2>&1 &
-        PID_BARRA=$!
-        # Con ipc el estado va por el socket de dwlb (dwlb no lee stdin).
-        while :; do dwlb-status 2>/dev/null; sleep 5; done | dwlb -status-stdin all >/dev/null 2>&1 &
-        PID_ESTADO=$!
-    else
-        # Sin ipc el estado va por la tuberia: dwlb lee su stdin y si la
-        # tuberia se cerrara (EOF) la barra terminaria.
-        # shellcheck disable=SC2086
-        while :; do dwlb-status 2>/dev/null; sleep 5; done | dwlb $OPCIONES_DWLB $EXTRA -no-ipc >>"$LOG" 2>&1 &
-        PID_BARRA=$!
-        PID_ESTADO=""
-    fi
+    case "$MODO_BARRA" in
+        -ipc)
+            # La barra no lee stdin; el estado va por el socket.
+            # shellcheck disable=SC2086
+            "$DWLB_BIN" $OPCIONES_DWLB $EXTRA -ipc </dev/null >>"$LOG" 2>&1 &
+            PID_BARRA=$!
+            generador_estado_ipc
+            PID_ESTADO=$!
+            ;;
+        *)
+            # La barra LEE su stdin: hay que darle la tuberia del estado. Con
+            # esto, ademas, nunca ve un EOF (la tuberia la mantiene abierta el
+            # bucle del generador) y no hereda un stdin que pueda cerrarse.
+            # OJO: con 'A | B &' el $! es el pid de B (dwlb), que es justo el
+            # que hay que vigilar.
+            # shellcheck disable=SC2086
+            { while :; do "$DWLB_STATUS_BIN" 2>/dev/null; sleep 5; done; } | \
+                "$DWLB_BIN" $OPCIONES_DWLB $EXTRA -no-ipc >>"$LOG" 2>&1 &
+            PID_BARRA=$!
+            PID_ESTADO=""
+            ;;
+    esac
     HIJOS="$HIJOS $PID_BARRA $PID_ESTADO"
-    # shellcheck disable=SC2086
     log "lanzado: dwlb $OPCIONES_DWLB $EXTRA $MODO_BARRA   (pid $PID_BARRA)"
     sleep 1
     if esta_vivo "$PID_BARRA"; then
-        log "la barra esta viva"
+        log "la barra esta viva ($MODO_BARRA)"
         return 0
     fi
-    log "la barra murio al arrancar (el motivo esta en las lineas de dwlb de este registro)"
+    log "la barra murio al arrancar (el motivo esta en las lineas de dwlb de arriba)"
     return 1
 }
+
+# --- Modo de la barra: lo dice dwl-session; si no, se deduce ----------------
+if [ -z "$DWL_BAR_MODE" ]; then
+    DWL_BAR_MODE="-no-ipc"
+    for DWL_CAND in "$HOME/dwl/dwl" /usr/local/bin/dwl; do
+        [ -f "$DWL_CAND" ] || continue
+        # El protocolo IPC deja su nombre en el binario: 'grep -a' busca dentro
+        # de un archivo binario.
+        if grep -aq "dwl_ipc_manager" "$DWL_CAND" 2>/dev/null; then
+            DWL_BAR_MODE="-ipc"
+        fi
+        break
+    done
+    log "modo de barra deducido del binario de dwl: $DWL_BAR_MODE"
+fi
 
 # --- Fondo de pantalla (necesita Wayland, por eso se lanza aqui) -----------
 if [ -n "$DWL_WALLPAPER" ] && [ -f "$DWL_WALLPAPER" ] && command -v swaybg >/dev/null 2>&1; then
@@ -1395,31 +1476,37 @@ if [ -n "$DWL_WALLPAPER" ] && [ -f "$DWL_WALLPAPER" ] && command -v swaybg >/dev
     HIJOS="$HIJOS $!"
 fi
 
-case "$DWL_BAR_KIND" in
+# --- Barra -----------------------------------------------------------------
+# Si DWL_BAR_KIND no viene definido (lanzado a mano), se supone dwlb.
+case "${DWL_BAR_KIND:-dwlb}" in
     dwlb)
         leer_opciones_dwlb
-        case "${DWL_BAR_MODE:--no-ipc}" in
-            -ipc)
-                if arrancar_barra -ipc ""; then
-                    :
-                else
-                    log "reintento sin ipc (dwl podria no llevar el parche IPC)"
-                    limpiar_hijos
-                    arrancar_barra -no-ipc "$TAGS_DEF -no-hide-vacant-tags" || \
-                        log "dwlb NO arranca en ningun modo: la sesion se queda sin barra"
-                fi
-                ;;
-            *)
-                if arrancar_barra -no-ipc "$TAGS_DEF -no-hide-vacant-tags"; then
-                    :
-                else
-                    log "reintento con ipc"
-                    limpiar_hijos
-                    arrancar_barra -ipc "" || \
-                        log "dwlb NO arranca en ningun modo: la sesion se queda sin barra"
-                fi
-                ;;
-        esac
+        if [ ! -x "$DWLB_BIN" ]; then
+            log "no se intenta nada: falta el ejecutable dwlb"
+        else
+            case "$DWL_BAR_MODE" in
+                -ipc)
+                    if arrancar_barra -ipc ""; then
+                        :
+                    else
+                        log "reintento sin ipc (dwl podria no llevar el parche IPC)"
+                        limpiar_hijos
+                        arrancar_barra -no-ipc "$TAGS_DEF -no-hide-vacant-tags" || \
+                            log "dwlb NO arranca en ningun modo: la sesion se queda sin barra"
+                    fi
+                    ;;
+                *)
+                    if arrancar_barra -no-ipc "$TAGS_DEF -no-hide-vacant-tags"; then
+                        :
+                    else
+                        log "reintento con ipc"
+                        limpiar_hijos
+                        arrancar_barra -ipc "" || \
+                            log "dwlb NO arranca en ningun modo: la sesion se queda sin barra"
+                    fi
+                    ;;
+            esac
+        fi
         ;;
     *)
         log "sin barra (DWL_BAR_KIND='$DWL_BAR_KIND')"
@@ -1443,6 +1530,157 @@ RUNNER_EOF
 }
 
 # ============================================================================
+# FUNCION: diagnostico de la barra (dwl-bar-diag)
+# ----------------------------------------------------------------------------
+# Se ejecuta DENTRO de dwl (Super+Enter abre foot) y dice, una por una, todas
+# las cosas que pueden impedir que aparezca dwlb, incluida una prueba en vivo
+# de los dos modos con el error exacto que da dwlb.
+# ============================================================================
+escribir_diagnostico() {
+    sudo tee /usr/local/bin/dwl-bar-diag >/dev/null <<'DIAG_EOF'
+
+#!/bin/sh
+# dwl-bar-diag: averigua por que no aparece la barra dwlb.
+# Ejecutalo DENTRO de la sesion dwl (Super+Enter abre una terminal foot):
+#     dwl-bar-diag
+# Desde una consola de texto tambien sirve, pero sin WAYLAND_DISPLAY no puede
+# hacer la prueba en vivo de dwlb.
+
+sep() { printf '\n== %s ==\n' "$1"; }
+
+echo "dwl-bar-diag: revision de la barra dwlb  ($(date '+%Y-%m-%d %H:%M'))"
+
+sep "entorno"
+echo "usuario.............. $(id -un) (uid $(id -u))"
+echo "XDG_RUNTIME_DIR...... ${XDG_RUNTIME_DIR:-(SIN DEFINIR -> dwlb NO puede arrancar)}"
+echo "WAYLAND_DISPLAY...... ${WAYLAND_DISPLAY:-(SIN DEFINIR)}"
+echo "PATH................. $PATH"
+
+# El PATH es la causa mas comun: runit arranca greetd con PATH=/usr/bin:/usr/sbin
+# y /usr/local/bin (donde vive dwlb) no esta. dwl-session y dwl-status-runner ya
+# lo corrigen solos, pero conviene saber si el entorno que llega aqui lo trae.
+case ":$PATH:" in
+    *:/usr/local/bin:*) echo "  /usr/local/bin ....... en el PATH (correcto)" ;;
+    *) echo "  /usr/local/bin ....... FALTA en el PATH (es el fallo tipico:" \
+            "/usr/local/bin no esta en el PATH de las sesiones de greetd; el" \
+            "instalador nuevo lo corrige en dwl-session y en el supervisor)" ;;
+esac
+# Para que el resto de la revision sea fiable, se anaden las rutas de siempre.
+for DIR_BIN in /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin; do
+    case ":$PATH:" in
+        *":$DIR_BIN:"*) ;;
+        *) PATH="${PATH:+$PATH:}$DIR_BIN" ;;
+    esac
+done
+export PATH
+
+sep "binarios (¿estan y son ejecutables?)"
+for B in dwl dwlb dwlb-status dwl-status-runner dwl-session swaybg foot wmenu-run; do
+    R=$(command -v "$B" 2>/dev/null || true)
+    if [ -n "$R" ] && [ -x "$R" ]; then
+        printf '  %-20s %s\n' "$B" "$R"
+    else
+        printf '  %-20s NO ENCONTRADO (deberia estar en /usr/local/bin)\n' "$B"
+    fi
+done
+
+sep "ficheros instalados"
+ls -l /usr/local/bin/dwl /usr/local/bin/dwlb /usr/local/bin/dwlb-status \
+      /usr/local/bin/dwl-status-runner /usr/local/bin/dwl-session 2>&1 | sed 's/^/  /'
+
+sep "¿le falta alguna libreria a dwlb?"
+if command -v ldd >/dev/null 2>&1; then
+    FALTAN=$(ldd /usr/local/bin/dwlb 2>/dev/null | grep 'not found' || true)
+    if [ -n "$FALTAN" ]; then
+        echo "  SI, FALTAN:"; printf '%s\n' "$FALTAN" | sed 's/^/    /'
+    else
+        echo "  no: todas las librerias estan"
+    fi
+else
+    echo "  (ldd no esta instalado; se omite)"
+fi
+
+sep "procesos"
+procesos() {
+    # $1 = nombre exacto (dwl, dwlb, dwlb-status, dwl-status-runner).
+    # Se mira el primer y el segundo campo de la orden (con los scripts, el
+    # segundo es la ruta del script) para no confundir unos con otros.
+    LISTA=$(ps -eo pid=,args= 2>/dev/null | awk -v p="$1" '
+        { args = $0; sub(/^[ \t]*[0-9]+[ \t]+/, "", args); split(args, a, " ")
+          if (a[1] == p || a[1] ~ ("/" p "$") || a[2] == p || a[2] ~ ("/" p "$")) print $0 }')
+    if [ -n "$LISTA" ]; then
+        printf '%s\n' "$LISTA" | sed 's/^/  /'
+    else
+        printf '  %s: no esta corriendo\n' "$1"
+    fi
+}
+procesos dwl
+procesos dwlb
+procesos dwlb-status
+procesos dwl-status-runner
+
+sep "¿el dwl instalado lleva el parche IPC?"
+if grep -aq "dwl_ipc_manager" /usr/local/bin/dwl 2>/dev/null; then
+    echo "  SI: la barra puede ir con -ipc (tags clicables)"
+else
+    echo "  NO: la barra tiene que ir con -no-ipc (usa Super+1..9 para los tags)"
+fi
+
+sep "configuracion de la barra (~/.config/dwlb/config)"
+CONF_DWLB="${XDG_CONFIG_HOME:-$HOME/.config}/dwlb/config"
+if [ -f "$CONF_DWLB" ]; then
+    sed 's/^/  /' "$CONF_DWLB"
+else
+    echo "  (no existe; el supervisor usara los valores por defecto de dwlb)"
+fi
+
+sep "sockets de la barra (XDG_RUNTIME_DIR/dwlb/)"
+if [ -n "$XDG_RUNTIME_DIR" ] && [ -d "$XDG_RUNTIME_DIR/dwlb" ]; then
+    ls -l "$XDG_RUNTIME_DIR/dwlb" 2>&1 | sed 's/^/  /'
+else
+    echo "  no existe el directorio ${XDG_RUNTIME_DIR:-?}/dwlb (dwlb no ha llegado a arrancar)"
+fi
+
+sep "PRUEBA EN VIVO (3 segundos por modo, dwlb tal cual y sin mas opciones)"
+if [ -z "$WAYLAND_DISPLAY" ]; then
+    echo "  No hay WAYLAND_DISPLAY: esto hay que ejecutarlo DENTRO de dwl"
+    echo "  (Super+Enter abre foot, y ahi: dwl-bar-diag)."
+else
+    for M in -no-ipc -ipc; do
+        ERR=/tmp/dwlb-diag.err
+        # -no-ipc lee el estado de su entrada estandar: se le da una tuberia
+        # viva (con </dev/null moriria por EOF, y eso es normal, no un fallo).
+        sleep 8 | /usr/local/bin/dwlb "$M" >/dev/null 2>"$ERR" &
+        P=$!
+        sleep 3
+        if kill -0 "$P" 2>/dev/null; then
+            echo "  OK ..... dwlb $M aguanta: la barra deberia haber aparecido 3 segundos"
+            kill "$P" 2>/dev/null
+        else
+            echo "  FALLO .. dwlb $M murio al arrancar y dijo:"
+            sed 's/^/           /' "$ERR"
+        fi
+        rm -f "$ERR"
+        sleep 1
+    done
+fi
+
+sep "registro de la sesion (ultimas 40 lineas)"
+LOG="${XDG_RUNTIME_DIR:-/tmp}/dwl-session-$(id -u).log"
+if [ -f "$LOG" ]; then
+    tail -n 40 "$LOG" | sed 's/^/  /'
+else
+    echo "  no existe $LOG"
+fi
+
+sep "fin"
+echo "Copia esta salida entera si tienes que pedir ayuda con la barra."
+DIAG_EOF
+    sudo chmod +x /usr/local/bin/dwl-bar-diag
+    info "Instalado /usr/local/bin/dwl-bar-diag (diagnostico de la barra)"
+}
+
+# ============================================================================
 # FUNCION: wrapper de sesion (lo ejecuta greetd/tuigreet)
 # ============================================================================
 escribir_sesion() {
@@ -1450,6 +1688,19 @@ escribir_sesion() {
 #!/bin/sh
 # dwl-session: arranca la sesion de dwl. Lo ejecuta greetd (via dwl-greeter).
 # Archivo generado por install-dwl.sh; puedes editarlo a mano.
+
+# --- 0. PATH de la sesion --------------------------------------------------
+# runit arranca los servicios con PATH=/usr/bin:/usr/sbin (ver /etc/runit/2) y
+# greetd/tuigreet no leen /etc/profile: sin esto, /usr/local/bin (dwlb,
+# dwlb-status, dwl-status-runner, dwl-greeter...) NO esta en el PATH y la barra
+# no arranca, aunque todo este bien instalado.
+for DIR_BIN in /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin; do
+    case ":$PATH:" in
+        *":$DIR_BIN:"*) ;;
+        *) PATH="${PATH:+$PATH:}$DIR_BIN" ;;
+    esac
+done
+export PATH
 
 # --- 1. Bus de sesion D-Bus ------------------------------------------------
 # Firefox, los portales y muchas apps lo necesitan. greetd no lo crea.
@@ -1845,8 +2096,21 @@ escribir_atajos() {
   dwlb -ipc.................... los clics en los tags funcionan
   dwlb -no-ipc................. no funcionan: usa Super+1 ... 9
 
-  Si la barra NO aparece al entrar en dwl, el supervisor deja el motivo en el
-  registro de la sesion (prueba solo, primero en un modo y luego en el otro):
+  La barra la arranca dwl-session (la sesion que lanza greetd). Si arrancas dwl
+  a mano desde una consola de texto, hazlo asi:
+
+        dwl -s /usr/local/bin/dwl-status-runner
+
+  (dwl a secas NO lleva barra: nadie la arrancaria.)
+
+  Si la barra NO aparece al entrar en dwl, ejecuta DENTRO de dwl:
+
+        dwl-bar-diag
+
+  Es un diagnostico que revisa el PATH, XDG_RUNTIME_DIR, los binarios, las
+  librerias, los procesos y ademas prueba dwlb en vivo 3 segundos en cada modo
+  diciendo el error exacto que da. El motivo tambien queda en el registro de la
+  sesion (el supervisor prueba solo, primero en un modo y luego en el otro):
 
         pgrep -a dwl; pgrep -a dwlb; pgrep -a dwlb-status
         tail -n 40 $XDG_RUNTIME_DIR/dwl-session-$(id -u).log
@@ -2538,7 +2802,12 @@ instalar_base() {
         info "La barra usara -no-ipc (el estado llega por stdin desde dwl)."
     fi
 
-    BARRA_CMD="dwl -s /usr/local/bin/dwl-status-runner"
+    # Ruta absoluta de dwl: si el PATH de la sesion no lo trae, no arrancaria.
+    DWL_RUTA=$(command -v dwl 2>/dev/null || true)
+    if [ -z "$DWL_RUTA" ] || [ ! -x "$DWL_RUTA" ]; then
+        DWL_RUTA="/usr/local/bin/dwl"
+    fi
+    BARRA_CMD="$DWL_RUTA -s /usr/local/bin/dwl-status-runner"
 
     # ------------------------------------------------------ 8. wallpaper y lf
     descargar_wallpaper
@@ -2546,6 +2815,7 @@ instalar_base() {
 
     # ------------------------------------------------------ 9. supervisor + sesion
     escribir_supervisor
+    escribir_diagnostico
     # Tags para la barra cuando dwl NO lleva el parche IPC (sin ipc dwlb no
     # sabe en que tag estas: los muestra como etiquetas fijas, sin estado).
     DWLB_TAGS_DEF="-tags 9"
@@ -2669,6 +2939,8 @@ info "  /usr/local/bin/dwl-session    Variables y programas al iniciar sesion"
 info "  /usr/local/bin/dwl-greeter    Opciones de la pantalla de login"
 info "  /etc/greetd/config.toml       greetd"
 info "  /etc/pam.d/greetd             Donde se activo pam_turnstile"
+info "  /usr/local/bin/dwl-bar-diag   Si la barra no aparece: ejecutalo dentro"
+info "                                de dwl (Super+Enter) y dice por que"
 info ""
 info "Si al entrar en dwl no ves la barra, el motivo queda en el registro"
 info "de la sesion (el supervisor prueba solo -ipc y -no-ipc y lo anota):"
