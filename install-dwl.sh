@@ -1,11 +1,11 @@
 #!/bin/sh
 # install-dwl-v0.8
 # Instalador de dwl (dwm para Wayland) para VOID LINUX.
-# Modos:
-#   1) Basico:   dwl + dwlb, foot, wmenu, swaybg, pipewire
-#   2) Completo: basico + Steam, drivers de GPU (incluido hibridas/Optimus)
+# Un solo modo: dwl + dwlb, foot, wmenu, swaybg, pipewire y arranque con
+# greetd + tuigreet (unico gestor de inicio; lightdm se elimina por completo).
 #
-# GESTOR DE INICIO: greetd + tuigreet (unico). lightdm se elimino por completo.
+# Este script NO instala drivers de GPU ni Steam. Eso lo instalas tu mismo
+# con XBPS cuando lo necesites (nonfree/multilib incluidos).
 #
 
 set -e
@@ -158,30 +158,41 @@ fi
 # Usuario del sistema que ejecuta el greeter en Void (lo crea el paquete greetd)
 GREETER_USER="_greeter"
 
+# Deteccion de GPU: las rellena detectar_gpus(). Se inicializan aqui para que
+# las comprobaciones del final no fallen si la deteccion no puede hacerse
+# (por ejemplo, en una VM o si lspci no llega a instalarse).
+# Ojo: son solo informativas; este instalador no instala drivers de GPU.
+GPU_VENDORS=""
+GPU_CARDS=""
+GPU_HIBRIDA=0
+
 # ==================================================================
 # MENU DE SELECCION
 # ==================================================================
 echo "=========================================="
-echo "    Instalador dwl (Void Linux) v0.7"
+echo "    Instalador dwl (Void Linux) v0.8"
 echo "=========================================="
 echo "Barra: dwlb (https://github.com/kolunmi/dwlb)"
 echo "Gestor de inicio: greetd + tuigreet"
 echo "(si tenias lightdm, se desactivara y desinstalara)"
+echo "(los drivers de GPU y Steam no se tocan: los instalas tu aparte)"
 echo
-echo "1) Instalacion BASICA (dwl + dwlb, foot, wmenu, swaybg)"
-echo "2) Instalacion COMPLETA (basica + Steam y drivers de GPU)"
-echo "3) Salir"
-printf "Opcion [1-3]: "
+echo "1) Instalar dwl + dwlb, foot, wmenu, swaybg y el arranque con greetd"
+echo "2) Salir"
+printf "Opcion [1-2]: "
 read -r OPCION
 
 case "$OPCION" in
-    1|2) ;;
-    3) info "Saliendo..."; exit 0 ;;
+    1) ;;
+    2) info "Saliendo..."; exit 0 ;;
     *) error "Opcion no valida."; exit 1 ;;
 esac
 
 # ==================================================================
 # FUNCION: detectar TODAS las GPUs (incluidas las hibridas / Optimus)
+# Es SOLO informativa: aqui no se instala ningun driver.
+# Lo que detecta se aprovecha para los avisos del wrapper de sesion
+# (cursor invisible con NVIDIA, WLR_DRM_DEVICES en equipos hibridos).
 # ==================================================================
 detectar_gpus() {
     if ! command -v lspci >/dev/null 2>&1; then
@@ -218,77 +229,16 @@ detectar_gpus() {
         GPU_HIBRIDA=0
     fi
 
-    GPU_HAS_NVIDIA=0
-    GPU_HAS_INTEL_AMD=0
-    case " $GPU_VENDORS " in *" nvidia "*) GPU_HAS_NVIDIA=1 ;; esac
-    case " $GPU_VENDORS " in *" intel "*|*" amd "*) GPU_HAS_INTEL_AMD=1 ;; esac
-    if [ "$GPU_HIBRIDA" -eq 1 ] && [ "$GPU_HAS_NVIDIA" -eq 1 ] && [ "$GPU_HAS_INTEL_AMD" -eq 1 ]; then
-        GPU_HIBRIDA_NVIDIA=1
-    else
-        GPU_HIBRIDA_NVIDIA=0
-    fi
-
     info "GPUs detectadas ($GPU_NUM):"
     printf '%s\n' "$GPU_LISTA" | sed 's/^/    /'
     info "Fabricantes: $GPU_VENDORS"
-    [ "$GPU_HIBRIDA" -eq 1 ] && info "Equipo con varias GPU detectado: se instalan los drivers de cada fabricante."
-    [ "$GPU_HIBRIDA_NVIDIA" -eq 1 ] && info "Hibrida Intel/AMD + NVIDIA: se habilita PRIME bajo demanda."
+    if [ "$GPU_HIBRIDA" -eq 1 ]; then
+        info "Equipo con varias GPU (hibrida / Optimus). Si dwl arrancara en la"
+        info "GPU equivocada, el wrapper dwl-session deja WLR_DRM_DEVICES ya"
+        info "escrita como comentario: basta con descomentar esa linea."
+    fi
     [ -n "$GPU_CARDS" ] && info "Nodos DRM: $GPU_CARDS"
     return 0
-}
-
-# ==================================================================
-# FUNCION: drivers de GPU (todos los vendors, con sus 32 bits)
-# ==================================================================
-instalar_drivers_gpu() {
-    info "Instalando drivers de GPU para: $GPU_VENDORS"
-
-    for VENDOR in $GPU_VENDORS; do
-        case "$VENDOR" in
-            nvidia)
-                warn "GPU NVIDIA: en Wayland el driver propietario funciona mucho mejor"
-                warn "que antes, pero puede dar guerra (cursor invisible, apps que no arrancan)."
-                sudo xbps-install -Sy nvidia nvidia-libs-32bit
-                echo "options nvidia-drm modeset=1" | sudo tee /etc/modprobe.d/nvidia-drm-modeset.conf >/dev/null
-                info "nvidia-drm modeset=1 configurado (imprescindible para Wayland)."
-                ;;
-            amd)
-                sudo xbps-install -Sy mesa-dri mesa-vulkan-radeon mesa-dri-32bit \
-                    mesa-vulkan-radeon-32bit linux-firmware-amd vulkan-loader
-                ;;
-            intel)
-                sudo xbps-install -Sy mesa-dri mesa-vulkan-intel mesa-dri-32bit \
-                    mesa-vulkan-intel-32bit intel-video-accel vulkan-loader
-                ;;
-            desconocida)
-                warn "No identifique la GPU. Instalo los drivers libres (mesa) por si acaso."
-                sudo xbps-install -Sy mesa-dri mesa-dri-32bit vulkan-loader || true
-                ;;
-        esac
-    done
-
-    if [ "$GPU_HIBRIDA_NVIDIA" -eq 1 ]; then
-        info "Configurando arranque en GPU dedicada bajo demanda (PRIME)..."
-        info "Creando /usr/local/bin/prime-run (Void no trae nvidia-prime)..."
-        sudo tee /usr/local/bin/prime-run >/dev/null <<'EOF'
-#!/bin/sh
-# prime-run: ejecuta una aplicacion usando la GPU NVIDIA en equipos hibridos.
-#   prime-run steam
-#   prime-run mpv video.mkv
-# Creado por install-dwl-v0.7.sh porque Void no empaqueta nvidia-prime.
-export __NV_PRIME_RENDER_OFFLOAD=1
-export __NV_PRIME_RENDER_OFFLOAD_PROVIDER=NVIDIA-G0
-export __GLX_VENDOR_LIBRARY_NAME=nvidia
-export __VK_LAYER_NV_optimus=NVIDIA_only
-exec "$@"
-EOF
-        sudo chmod +x /usr/local/bin/prime-run
-
-        warn "En hibridas, si dwl arranca en pantalla negra es que wlroots escogio la"
-        warn "GPU equivocada. Fija las GPUs en /usr/local/bin/dwl-session con:"
-        warn "  export WLR_DRM_DEVICES=$GPU_CARDS"
-        warn "(ya quedaron anotadas como comentario dentro del wrapper)."
-    fi
 }
 
 # ==================================================================
@@ -300,6 +250,7 @@ EOF
 #
 # Dependencias de dwlb (README del autor):
 #   libwayland-client, libwayland-cursor, pixman, fcft
+compilar_dwlb() {
     cd "$HOME" || return 1
     if [ -d dwlb ]; then
         info "Ya existe ~/dwlb: se reutiliza el clon existente."
@@ -368,7 +319,7 @@ configurar_dwlb() {
     # agrupar. Cambiar aqui NO requiere recompilar: basta con reiniciar dwl.
     write_config "$HOME/.config/dwlb/config" <<EOF
 # Configuracion de dwlb  (https://github.com/kolunmi/dwlb)
-# Generada por install-dwl-v0.7.sh
+# Generada por install-dwl-v0.8.sh
 # Una opcion por linea, tal cual se pasarian en la linea de comandos.
 # Referencia completa: man 1 dwlb
 
@@ -511,7 +462,7 @@ configurar_greetd() {
     backup_file /etc/greetd/config.toml
 
     sudo tee /etc/greetd/config.toml >/dev/null <<EOF
-# Generado por install-dwl-v0.7.sh (v0.7)
+# Generado por install-dwl-v0.8.sh (v0.8)
 # Documentacion: man 1 tuigreet
 
 [terminal]
@@ -540,7 +491,7 @@ EOF
             info "pam_turnstile ya estaba en $PAM_FILE."
         else
             backup_file "$PAM_FILE"
-            printf '\n# Anadido por install-dwl-v0.7.sh para turnstile (XDG_RUNTIME_DIR)\nsession\toptional\tpam_turnstile.so\n' | \
+            printf '\n# Anadido por install-dwl-v0.8.sh para turnstile (XDG_RUNTIME_DIR)\nsession\toptional\tpam_turnstile.so\n' | \
                 sudo tee -a "$PAM_FILE" >/dev/null
             info "Anadido 'session optional pam_turnstile.so' a $PAM_FILE"
             warn "Si algo falla al iniciar sesion, restaura la copia .bak-* de $PAM_FILE."
@@ -618,7 +569,7 @@ detectar_hardware() {
     fi
 }
 # ==================================================================
-# FUNCION: instalacion basica de dwl
+# FUNCION: instalacion de dwl
 # ==================================================================
 instalar_base() {
 
@@ -678,7 +629,7 @@ instalar_base() {
         mesa-dri libdrm-devel \
         pango-devel cairo-devel \
         pixman pixman-devel fcft fcft-devel tllist \
-        foot wmenu fastfetch \
+        foot wmenu fastfetch void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree \
         pipewire wireplumber alsa-pipewire \
         swaybg swaylock grim slurp wl-clipboard \
         brightnessctl curl procps-ng \
@@ -738,6 +689,7 @@ instalar_base() {
     # 3. Deteccion de GPUs (antes de escribir el wrapper)
     # --------------------------------------------------------
     detectar_hardware
+    detectar_gpus || warn "No pude detectar las GPU; seguire sin sus avisos (el resto no cambia)."
 
     # --------------------------------------------------------
     # 4. Zona horaria
@@ -875,7 +827,7 @@ instalar_base() {
         info "Escribiendo config.h personalizado (atajos, volumen, brillo, screenshot, barra)..."
 
         cat > config.h <<EOF
-/* Configuracion de dwl generada por install-dwl-v0.7.sh
+/* Configuracion de dwl generada por install-dwl-v0.8.sh
  * Escrita contra la API ACTUAL de dwl (codeberg.org/dwl/dwl, rama main).
  * Cambios de dwl que rompian los config.h antiguos y aqui ya estan resueltos:
  *   - Ya NO existe el array tags[]: ahora se usa  #define TAGCOUNT (9)
@@ -1648,85 +1600,7 @@ EOF
 ==============================================================================
 ATAJOS_EOF
 
-    info "Instalacion basica de dwl completada."
-}
-
-# ==================================================================
-# FUNCION: gaming (Steam + drivers)
-# ==================================================================
-instalar_gaming() {
-
-    GAMING_USER=$(id -un)
-
-    info "Habilitando repositorios nonfree y multilib..."
-    sudo xbps-install -Sy void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree
-
-    info "Resincronizando los indices de los repositorios nuevos..."
-    sudo xbps-install -Sy || warn "La resincronizacion fallo; puede que steam no aparezca."
-
-    instalar_drivers_gpu
-
-    STEAM_VER=$(xbps-query -R -p version steam 2>/dev/null || true)
-    if [ -z "$STEAM_VER" ]; then
-        error "Despues de activar nonfree, 'steam' sigue sin aparecer."
-        warn  "Compruebalo a mano con:  xbps-query -Rs steam"
-        warn  "Se omite la instalacion gaming; el resto del sistema queda instalado."
-        return 0
-    fi
-    info "Steam localizado en los repositorios: $STEAM_VER"
-
-    STEAM_32="libgcc-32bit libstdc++-32bit libdrm-32bit libglvnd-32bit libva-32bit"
-    case " $GPU_VENDORS " in
-        *" nvidia "*) STEAM_32="$STEAM_32 nvidia-libs-32bit" ;;
-    esac
-    case " $GPU_VENDORS " in
-        *" intel "*|*" amd "*|*" desconocida "*) STEAM_32="$STEAM_32 mesa-dri-32bit" ;;
-    esac
-    info "Instalando las librerias de 32 bits que necesita Steam en x86_64..."
-    sudo xbps-install -Sy $STEAM_32 || \
-        warn "Alguna libreria de 32 bits fallo. Repitelo a mano: sudo xbps-install -S $STEAM_32"
-
-    info "Instalando Steam..."
-    if ! sudo xbps-install -Sy steam; then
-        error "Steam no se pudo instalar. Comprueba:"
-        error "  xbps-query -Rs steam     (debe salir la version)"
-        error "  df -h                    (steam ocupa ~1GB con su runtime)"
-        warn  "Se omite el resto de la instalacion gaming."
-        return 0
-    fi
-
-    info "Instalando gamemode, gamescope y mono (opcionales)..."
-    sudo xbps-install -Sy gamemode  || warn "gamemode no se instalo (opcional; no afecta a Steam)."
-    sudo xbps-install -Sy gamescope || warn "gamescope no se instalo (opcional; no afecta a Steam)."
-    sudo xbps-install -Sy mono      || warn "mono no se instalo (opcional; algunos juegos lo piden)."
-
-    info "Subiendo el limite de ficheros abiertos (lo pide Proton)..."
-    sudo mkdir -p /etc/security/limits.d
-    printf '* soft nofile 524288\n* hard nofile 524288\n' | \
-        sudo tee /etc/security/limits.d/00-steam-proton.conf >/dev/null
-
-    if sudo usermod -aG video "$GAMING_USER" 2>/dev/null; then
-        info "Usuario $GAMING_USER anadido al grupo 'video' (lo pide Steam)."
-    else
-        warn "No pude anadir a $GAMING_USER al grupo video."
-        warn "Hazlo a mano: sudo usermod -aG video $GAMING_USER"
-    fi
-
-    enable_svc dbus
-
-    info "Steam corre sobre XWayland automaticamente."
-    if [ "$GPU_HIBRIDA_NVIDIA" -eq 1 ]; then
-        warn "Equipo HIBRIDO Intel/AMD + NVIDIA: para que un juego use NVIDIA, lanzalo con:"
-        warn "  prime-run steam"
-        warn "o pon en las opciones de lanzamiento del juego:"
-        warn "  prime-run %command%"
-    fi
-    info "gamescope es un mini-compositor Wayland: lanza juegos con"
-    info "'gamescope -- %command%' desde las propiedades de lanzamiento en Steam."
-
-    info "Instalacion gaming completada."
-    warn "REINICIA: los grupos nuevos (video) y el driver de GPU solo aplican tras reiniciar."
-    warn "Abre Steam por primera vez desde foot ('steam') para que se actualice."
+    info "Instalacion de dwl completada."
 }
 
 # ==================================================================
@@ -1734,10 +1608,6 @@ instalar_gaming() {
 # ==================================================================
 instalar_base
 configurar_greetd
-
-if [ "$OPCION" = "2" ]; then
-    instalar_gaming
-fi
 
 # LO ULTIMO: greetd se levanta solo cuando ya no queda nada pendiente.
 iniciar_greetd
@@ -1768,6 +1638,16 @@ info "  /etc/greetd/config.toml       greetd + tuigreet"
 info "  /etc/pam.d/greetd             Donde se activo pam_turnstile (XDG_RUNTIME_DIR)"
 info ""
 info "Para aplicar cambios tras editar config.h ejecuta: dwl-rebuild"
+info ""
+info "Drivers de GPU y Steam: este script no los toca. Instalalos tu aparte"
+info "cuando quieras, con XBPS a tu manera. Como referencia:"
+info "  NVIDIA........ sudo xbps-install -S nvidia nvidia-libs-32bit"
+info "                 y ademas: options nvidia-drm modeset=1 (en /etc/modprobe.d/)"
+info "  AMD........... sudo xbps-install -S mesa-dri mesa-vulkan-radeon linux-firmware-amd"
+info "  Intel......... sudo xbps-install -S mesa-dri mesa-vulkan-intel intel-video-accel"
+info "  Steam......... activa antes void-repo-nonfree, void-repo-multilib y"
+info "                 void-repo-multilib-nonfree; luego: sudo xbps-install -S steam"
+info "(la guia de Void tiene la parte de 32 bits y de gaming al dia)"
 info ""
 warn "IMPORTANTE: reinicia antes de usar dwl. Los grupos nuevos"
 warn "('${SEAT_GROUP:-_seatd}' y video) solo se aplican al volver a iniciar"
