@@ -2,6 +2,8 @@
 # ============================================================================
 #  install-dwl.sh  -  Instalador de dwl + dwlb para VOID LINUX
 #  VERSION: 0.8
+#  (La version SOLO se cambia cuando lo diga el usuario: no la subas por tu
+#   cuenta al hacer cambios. Ahora mismo es la 0.8.)
 # ----------------------------------------------------------------------------
 #  Modos:
 #    1) Basico:   dwl + dwlb (barra), foot, wmenu, swaybg, pipewire
@@ -152,9 +154,20 @@ if ! command -v git >/dev/null 2>&1; then
     exit 1
 fi
 
-FREE_GB=$(df -BG --output=avail "$HOME" 2>/dev/null | tail -n1 | tr -d 'G ')
-if [ -n "$FREE_GB" ] && [ "$FREE_GB" -lt 20 ] 2>/dev/null; then
-    warn "Solo detecto ${FREE_GB}GB libres en $HOME. Se recomiendan al menos 20GB."
+# Espacio libre: los paquetes se instalan en / y la compilacion ocurre en
+# $HOME. Se mira la particion que este mas justa de las dos. Se usa df -Pk
+# (POSIX) en vez de --output, que no existe en todos los df.
+libre_gb() { df -Pk "$1" 2>/dev/null | awk 'NR==2 {printf "%d", ($4/1048576)+0.5}'; }
+FREE_HOME=$(libre_gb "$HOME")
+FREE_ROOT=$(libre_gb /)
+FREE_GB=$FREE_HOME
+if [ -n "$FREE_HOME" ] && [ -n "$FREE_ROOT" ] && [ "$FREE_ROOT" -lt "$FREE_HOME" ] 2>/dev/null; then
+    FREE_GB=$FREE_ROOT
+fi
+if [ -n "$FREE_GB" ] && [ "$FREE_GB" -lt 12 ] 2>/dev/null; then
+    warn "Solo detecto ${FREE_GB}GB libres (miro $HOME y /)."
+    warn "La instalacion BASICA necesita unos 12GB; si luego eliges el modo"
+    warn "COMPLETO (Steam + drivers de GPU) conviene tener 25GB o mas."
     pedir_si_no CONTINUAR_DISCO "Continuar de todas formas?" "no"
     if [ "$CONTINUAR_DISCO" != "si" ]; then
         error "Cancelado por el usuario."
@@ -519,7 +532,7 @@ elegir_tag_dwl() {
 # FUNCION: generar config.h a partir del config.def.h DEL TAG QUE SE COMPILA
 # ----------------------------------------------------------------------------
 # Asi el config.h siempre encaja con la API de esa version (por ejemplo
-# TAGKEYS cambio de 3 a 2 argumentos en v0.7) y no hay que mantener
+# TAGKEYS cambio de 3 a 2 argumentos entre v0.8 y v0.9) y no hay que mantener
 # a mano un config.h para cada version de dwl.
 # ============================================================================
 generar_config_h() {
@@ -2097,6 +2110,23 @@ PRIME_EOF
 instalar_gaming() {
     titulo "Steam y gaming"
 
+    # --- Espacio: Steam + drivers piden bastante mas que el modo basico -----
+    FREE_GB_AHORA=$(libre_gb "$HOME")
+    FREE_ROOT_AHORA=$(libre_gb /)
+    if [ -n "$FREE_ROOT_AHORA" ] && [ -n "$FREE_GB_AHORA" ] && [ "$FREE_ROOT_AHORA" -lt "$FREE_GB_AHORA" ] 2>/dev/null; then
+        FREE_GB_AHORA=$FREE_ROOT_AHORA
+    fi
+    if [ -n "$FREE_GB_AHORA" ] && [ "$FREE_GB_AHORA" -lt 25 ] 2>/dev/null; then
+        warn "Modo COMPLETO con ${FREE_GB_AHORA}GB libres: Steam y los drivers"
+        warn "suelen necesitar 25GB o mas. Si el disco se llena, la instalacion"
+        warn "puede fallar a medias (y Steam sin sitio para los juegos no sirve)."
+        pedir_si_no CONTINUAR_STEAM "Continuar con Steam y drivers de todas formas?" "si"
+        if [ "$CONTINUAR_STEAM" != "si" ]; then
+            warn "Se omiten Steam y los drivers de GPU."
+            return 0
+        fi
+    fi
+
     # --- Multilib solo en x86_64 con glibc ---------------------------------
     if [ "$ARQ_BASE" != "x86_64" ] || [ "$LIBC" != "glibc" ]; then
         warn "Steam necesita multilib x86_64 con glibc, y tu sistema es:"
@@ -2190,10 +2220,18 @@ instalar_base() {
 
     # ---------------------------------------------------------------- kernel
     info "Kernel en uso: $(uname -r)"
-    KERNEL_NUEVO=$(xbps-query --regex -Rs '^linux[0-9]+\.[0-9]+$' 2>/dev/null | \
-        awk '{print $2}' | \
-        grep -E '^linux[0-9]+\.[0-9]+-[0-9]' | \
-        sed 's/-[0-9].*$//' | sort -V | tail -n1)
+    # OJO: en xbps-query el patron de --regex se compara con "nombre-version"
+    # (linux6.18-6.18.54_1), asi que '^linux6\.18$' no encajaria nunca y la
+    # busqueda saldria vacia. Se busca por subcadena y se filtra aqui; el
+    # prefijo "[*] "/"[-] " (instalado o no) se quita de forma tolerante.
+    KERNEL_NUEVO=$(xbps-query -R -s linux 2>/dev/null | \
+        sed 's/^\[[^]]*\][[:space:]]*//' | \
+        awk '{print $1}' | \
+        grep -E '^linux[0-9][0-9]*\.[0-9][0-9]*-[0-9]' | \
+        sed 's/-[0-9].*$//' | \
+        sed 's/^linux//' | \
+        sort -t. -k1,1n -k2,2n -u | tail -n1)
+    [ -n "$KERNEL_NUEVO" ] && KERNEL_NUEVO="linux$KERNEL_NUEVO"
     KERNEL_ACTUAL_SERIE="linux$(uname -r | sed -n 's/^\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/p')"
 
     if [ -z "$KERNEL_NUEVO" ]; then
