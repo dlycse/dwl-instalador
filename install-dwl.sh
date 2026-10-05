@@ -276,7 +276,15 @@ compilar_dwlb() {
     #   "invalid version for global zwlr_layer_shell_v1: have 3, wanted 4"
     # Se ata la peticion a la version realmente anunciada.
     if grep -qE 'zwlr_layer_shell_v1_interface, [0-9]+\)' dwlb.c 2>/dev/null; then
-        DWLB_LS_VER=$(grep -oE 'zwlr_layer_shell_v1_interface, [0-9]+\)' dwlb.c | head -n1 | grep -oE '[0-9]+')
+        # OJO: hay que sacar SOLO el numero que va justo antes del parentesis.
+        # Un 'grep -oE "[0-9]+"' a secas devolveria tambien el "1" de
+        # "zwlr_layer_shell_v1_interface" y luego "[ ... -gt 1 ]" fallaria con
+        # "Illegal number".
+        DWLB_LS_VER=$(grep -oE 'zwlr_layer_shell_v1_interface, [0-9]+\)' dwlb.c | head -n1 | \
+            sed -n 's/.*,[[:space:]]*\([0-9][0-9]*\))$/\1/p')
+        case "$DWLB_LS_VER" in
+            ''|*[!0-9]*) DWLB_LS_VER="" ;;
+        esac
         if [ -n "$DWLB_LS_VER" ] && [ "$DWLB_LS_VER" -gt 1 ]; then
             sed -i "s|&zwlr_layer_shell_v1_interface, $DWLB_LS_VER)|\&zwlr_layer_shell_v1_interface, (version < $DWLB_LS_VER ? version : $DWLB_LS_VER))|" dwlb.c || \
                 warn "No pude aplicar el parche layer-shell a dwlb; sigo igualmente."
@@ -620,7 +628,7 @@ instalar_base() {
     info "Instalando dependencias de dwl y del entorno Wayland..."
     if ! sudo xbps-install -Sy \
         base-devel file pkg-config \
-        libinput libinput-devel \
+        libinput libinput-devel void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree \
         wayland wayland-devel wayland-protocols \
         libxkbcommon libxkbcommon-devel \
         wlroots wlroots-devel \
@@ -629,7 +637,7 @@ instalar_base() {
         mesa-dri libdrm-devel \
         pango-devel cairo-devel \
         pixman pixman-devel fcft fcft-devel tllist \
-        foot wmenu fastfetch void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree \
+        foot wmenu fastfetch \
         pipewire wireplumber alsa-pipewire \
         swaybg swaylock grim slurp wl-clipboard \
         brightnessctl curl procps-ng \
