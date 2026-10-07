@@ -1,8 +1,9 @@
 #!/bin/sh
-# install-dwl v0.9
+# install-dwl v0.9.1 - greetd espera a GPU antes de iniciar
 # Instalador automatico de dwl (dwm para Wayland) - ESTABLE.
 # Distros soportadas: Arch Linux/derivados + Void Linux
 #
+# Correcciones v0.9.1: greetd no inicia antes de que la GPU este lista (evita inicios prematuros/pantallas negras)
 # Correcciones v0.9:
 #  - Arreglo automatico de mirrors desincronizados (error 404) con reflector
 #  - Actualizacion previa de archlinux-keyring para evitar errores de firmas
@@ -22,7 +23,7 @@ warn()  { printf "%b[!]%b %s\n" "$Y" "$N" "$1"; }
 err()   { printf "%b[x]%b %s\n" "$R" "$N" "$1"; exit 1; }
 header(){ printf "%b%s%b\n" "$C" "$1" "$N"; }
 
-VERSION="v0.9"
+VERSION="v0.9.1"
 [ "$(id -u)" -eq 0 ] && err "No ejecutes este script como root, usa tu usuario normal."
 command -v sudo >/dev/null 2>&1 || err "Falta sudo en el sistema."
 command -v git  >/dev/null 2>&1 || err "Falta git en el sistema."
@@ -739,37 +740,62 @@ if PKGHAS lightdm || PKGHAS lightdm-gtk3-greeter || PKGHAS lightdm-gtk-greeter; 
   PKGREM lightdm lightdm-gtk3-greeter lightdm-gtk-greeter 2>/dev/null || true
 fi
 
+# Wrapper que ESPERA hasta que la GPU este lista antes de lanzar tuigreet
+sudo tee /usr/local/bin/greetd-tuigreet-wrapper >/dev/null <<'WRAP'
+#!/bin/sh
+# Esperar hasta 10 segundos a que los dispositivos DRM/GPU esten listos
+for i in $(seq 1 20); do
+  if ls /dev/dri/card* >/dev/null 2>&1; then
+    sleep 1
+    exec tuigreet --cmd /usr/local/bin/dwl-session
+  fi
+  sleep 0.5
+done
+exec tuigreet --cmd /usr/local/bin/dwl-session
+WRAP
+sudo chmod +x /usr/local/bin/greetd-tuigreet-wrapper
+
 if [ "$FAMILIA" = "arch" ]; then
   # Crear usuario greeter si no existe
   if ! id -u "$GREETER_USR" >/dev/null 2>&1; then
     sudo useradd -r -s /sbin/nologin -d /var/lib/greetd "$GREETER_USR"
   fi
-  # Agregar a grupos necesarios
-  sudo usermod -aG tty,video "$GREETER_USR"
+  # Agregar a grupos necesarios (incluido input)
+  sudo usermod -aG tty,video,input "$GREETER_USR"
   sudo mkdir -p /var/lib/greetd
   sudo chown "$GREETER_USR:$GREETER_USR" /var/lib/greetd 2>/dev/null
   sudo chmod 700 /var/lib/greetd
   sudo mkdir -p /etc/greetd
-  # Configuracion de greetd
+  # Configuracion de greetd USA EL WRAPPER DE ESPERA
   sudo tee /etc/greetd/config.toml >/dev/null <<TOML
 [terminal]
 vt = $GREETD_VT
 [default_session]
-command = "tuigreet --cmd /usr/local/bin/dwl-session"
+command = "/usr/local/bin/greetd-tuigreet-wrapper"
 user = "$GREETER_USR"
 TOML
-  # Metodo oficial ArchWiki: reemplazar autovt@tty1 con greetd para eliminar la carrera con agetty
+  # Drop-in de systemd para greetd: no arrancar antes de que logind/udev esten listos
+  sudo mkdir -p /etc/systemd/system/greetd.service.d
+  sudo tee /etc/systemd/system/greetd.service.d/10-wait-ready.conf >/dev/null <<INI
+[Unit]
+After=systemd-logind.service systemd-user-sessions.service systemd-udev-settle.service plymouth-quit-wait.service
+Wants=systemd-logind.service
+ExecStartPre=/bin/sleep 1
+Conflicts=getty@tty1.service getty@tty${GREETD_VT}.service
+INI
+  # Metodo oficial ArchWiki: reemplazar autovt@tty1 con greetd
   disable_getty_vt "$GREETD_VT"
   sudo ln -sf /usr/lib/systemd/system/greetd.service /etc/systemd/system/autovt@tty1.service
-  info "Reemplazado el login de texto de tty1 con greetd (sin carreras con agetty)."
+  info "Reemplazado login de texto con greetd, con espera automatica de GPU."
   svc_reload
-  sudo systemctl enable greetd.service 2>/dev/null || true
+  sudo systemctl disable greetd.service 2>/dev/null
+  sudo systemctl enable greetd.service 2>/dev/null
   sudo systemctl restart greetd.service 2>/dev/null || true
-  sleep 1
+  sleep 2
   if systemctl is-active --quiet greetd; then
-    info "✅ greetd esta ACTIVO en tty$GREETD_VT. Pulsa Ctrl+Alt+F$GREETD_VT si la pantalla no cambia automaticamente."
+    info "✅ greetd ACTIVO, esperando GPU antes de mostrar tuigreet."
   else
-    warn "greetd se iniciara automaticamente despues del reinicio."
+    warn "greetd arrancara correctamente despues del reboot con espera de GPU."
   fi
 else
   # Void Linux
@@ -779,7 +805,7 @@ else
 [terminal]
 vt = $GREETD_VT
 [default_session]
-command = "tuigreet --cmd /usr/local/bin/dwl-session"
+command = "/usr/local/bin/greetd-tuigreet-wrapper"
 user = "$GREETER_USR"
 TOML
   if [ "$NEED_TURNSTILE" -eq 1 ]; then
