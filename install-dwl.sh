@@ -150,7 +150,13 @@ if [ "$DISTRO_FAMILIA" = "void" ]; then
             warn "/etc/sv/$1 no existe; activalo a mano."; return 1
         fi
     }
-    disable_svc() { [ -L "/var/service/$1" ] && { sudo sv stop "$1" 2>/dev/null; sudo rm -f "/var/service/$1"; info "Servicio $1 desactivado." }; }
+    disable_svc() {
+        if [ -L "/var/service/$1" ]; then
+            sudo sv stop "$1" 2>/dev/null || true
+            sudo rm -f "/var/service/$1"
+            info "Servicio $1 desactivado."
+        fi
+    }
     start_svc()   { sudo sv start "$1"; }
     disable_getty(){ VT="$1"; [ -L "/var/service/agetty-tty$VT" ] && disable_svc "agetty-tty$VT"; }
 
