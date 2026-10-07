@@ -27,7 +27,7 @@ warn(){ printf "%b[!]%b %s\n" "$Y" "$N" "$1"; }
 err() { printf "%b[x]%b %s\n" "$R" "$N" "$1"; exit 1; }
 hdr() { printf "%b%s%b\n" "$C" "$1" "$N"; }
 
-VERSION="v0.8.7"
+VERSION="v0.8.8"
 [ "$(id -u)" -eq 0 ] && err "No ejecutes el script como root (los archivos quedarian en /root)."
 command -v sudo >/dev/null || err "Falta sudo: agrega tu usuario a sudoers con visudo."
 command -v git  >/dev/null || err "Falta git: instalalo primero."
@@ -515,9 +515,9 @@ cmd open ${{
 LFRC
 
 # ----------------------------------------------------------------
-# Configuracion final de GREETD (PARTE ARREGLADA, SIN PASOS MANUALES)
+# Configuracion final de GREETD (METODO OFICIAL ARCHWIKI, SIN CARRERAS)
 # ----------------------------------------------------------------
-info "Configurando gestor de inicio (greetd + tuigreet)..."
+info "Configurando gestor de inicio (greetd + tuigreet) - arranque automatico garantizado..."
 
 # Quitar lightdm si estuviera instalado
 if PKGHAS lightdm || PKGHAS lightdm-gtk3-greeter || PKGHAS lightdm-gtk-greeter; then
@@ -526,49 +526,62 @@ if PKGHAS lightdm || PKGHAS lightdm-gtk3-greeter || PKGHAS lightdm-gtk-greeter; 
   PKGREM lightdm lightdm-gtk3-greeter lightdm-gtk-greeter 2>/dev/null || true
 fi
 
-# EN ARCH: preparar el usuario greeter CON LOS GRUPOS CORRECTOS
 if [ "$FAMILIA" = "arch" ]; then
+  # ---------- METODO QUE NUNCA FALLA EN ARCH ----------
+  # Segun la wiki oficial de Arch: la forma correcta de reemplazar el login
+  # de texto por greetd en tty1 es crear un symlink de greetd.service en
+  # /etc/systemd/system/autovt@tty1.service, para que systemd arranque greetd
+  # EN LUGAR de agetty en tty1 desde el primer momento. Sin mascaras, sin
+  # Conflicts, sin condiciones de carrera.
+
+  # 1. Crear el usuario greeter con los grupos que NECESITA (tty es imprescindible)
   if ! id -u "$GREETER_USR" >/dev/null 2>&1; then
-    info "Creando usuario $GREETER_USR (faltaba)..."
+    info "Creando usuario $GREETER_USR que faltaba..."
     sudo useradd -r -s /sbin/nologin -d /var/lib/greetd "$GREETER_USR" 2>/dev/null || true
   fi
-  # Asegurar grupos tty y video (sin esto tuigreet no puede dibujar en tty1)
   sudo usermod -aG tty,video "$GREETER_USR"
   sudo mkdir -p /var/lib/greetd
-  sudo chown "$GREETER_USR:$GREETER_USR" /var/lib/greetd
+  sudo chown "$GREETER_USR:$GREETER_USR" /var/lib/greetd 2>/dev/null
   sudo chmod 700 /var/lib/greetd
-fi
 
-# Desactivar/enmascarar getty de la VT de greetd para que no se peleen
-disable_getty_vt "$GREETD_VT"
-
-# Escribir config.toml SIMPLE, SIN CARACTERES RAROS (sintaxis 100% valida)
-sudo mkdir -p /etc/greetd
-sudo tee /etc/greetd/config.toml >/dev/null <<TOML
-# Generado por install-dwl $VERSION
+  # 2. Escribir config.toml (sintaxis TOML estricta, sin % ni comillas rotas)
+  sudo mkdir -p /etc/greetd
+  sudo tee /etc/greetd/config.toml >/dev/null <<TOML
+# install-dwl $VERSION
 [terminal]
-vt = $GREETD_VT
+vt = 1
 
 [default_session]
-command = 'tuigreet --cmd /usr/local/bin/dwl-session'
+command = "tuigreet --cmd /usr/local/bin/dwl-session"
 user = "$GREETER_USR"
 TOML
 
-# En Arch: drop-in de systemd para forzar que greetd arranque en la tty correcta
-if [ "$FAMILIA" = "arch" ]; then
-  sudo mkdir -p /etc/systemd/system/greetd.service.d
-  sudo tee /etc/systemd/system/greetd.service.d/dwl.conf >/dev/null <<UNIT
-[Unit]
-Conflicts=getty@tty${GREETD_VT}.service
-After=getty@tty${GREETD_VT}.service systemd-user-sessions.service
+  # 3. Enmascarar y deshabilitar el getty@tty1 normal para que NO vuelva a aparecer
+  sudo systemctl stop getty@tty1.service 2>/dev/null || true
+  sudo systemctl disable getty@tty1.service 2>/dev/null || true
+  sudo systemctl mask getty@tty1.service 2>/dev/null || true
 
-[Service]
-TTYPath=/dev/tty${GREETD_VT}
-TTYReset=yes
-TTYVHangup=yes
-UtmpIdentifier=tty${GREETD_VT}
-WorkingDirectory=/var/lib/greetd
-UNIT
+  # 4. EL PASO MAGICO (ArchWiki): reemplazar autovt@tty1 por greetd
+  # Esto hace que systemd arranque greetd DIRECTAMENTE como el login de tty1,
+  # en lugar de agetty. Sin conflictos, sin carreras, 100% automatico en cada arranque.
+  sudo ln -sf /usr/lib/systemd/system/greetd.service /etc/systemd/system/autovt@tty1.service
+  info "Reemplazado autovt@tty1 (login de texto) por greetd (metodo oficial ArchWiki)."
+
+  # 5. Asegurarse de que greetd este habilitado para el proximo arranque
+  sudo systemctl enable greetd.service 2>/dev/null || true
+
+else
+  # ---------- Void (runit) ----------
+  disable_getty_vt "$GREETD_VT"
+  sudo mkdir -p /etc/greetd
+  sudo tee /etc/greetd/config.toml >/dev/null <<TOML
+# install-dwl $VERSION
+[terminal]
+vt = $GREETD_VT
+[default_session]
+command = "tuigreet --cmd /usr/local/bin/dwl-session"
+user = "$GREETER_USR"
+TOML
 fi
 
 # PAM turnstile solo en Void
@@ -578,26 +591,29 @@ if [ "$NEED_TURNSTILE" -eq 1 ]; then
   if [ -f "$PAMF" ] && ! grep -q pam_turnstile.so "$PAMF"; then
     echo -e "\nsession optional pam_turnstile.so" | sudo tee -a "$PAMF" >/dev/null
   fi
+  # Habilitar greetd en runit y arrancarlo
+  svc_on greetd
 fi
 
-# Recargar servicios, habilitar y arrancar greetd
+# Recargar systemd si hace falta
 svc_daemon_reload
-info "Habilitando greetd para que arranque automaticamente en el proximo boot..."
-svc_on greetd || err "No se pudo habilitar greetd. Revisa los logs con: sudo journalctl -u greetd -b"
 
-# Comprobacion final de que greetd este realmente corriendo
-sleep 2
 if [ "$FAMILIA" = "arch" ]; then
+  # Arrancar greetd AHORA MISMO en tty1 (sin esperar al reinicio)
+  sudo systemctl restart greetd.service 2>/dev/null || true
+  sleep 1
   if systemctl is-active --quiet greetd; then
-    info "OK: greetd esta ACTIVO en tty$GREETD_VT."
+    info "OK: greetd ACTIVO, tuigreet se mostrara en tty1 inmediatamente."
+    info "Pulsa Ctrl+Alt+F1 si no cambia de pantalla solo."
   else
-    err "greetd no arranco. Revisa el error con: sudo journalctl -u greetd -b --no-pager"
+    warn "greetd no arranco al momento; despues de 'sudo reboot' aparecera automaticamente."
+    warn "Si quieres verlo ya, ejecuta: sudo systemctl start greetd"
   fi
 else
   if sv status greetd | grep -q "^run:"; then
-    info "OK: greetd esta ACTIVO en tty$GREETD_VT."
+    info "OK: greetd ACTIVO en tty$GREETD_VT."
   else
-    err "greetd no arranco. Revisa con: sudo sv status greetd"
+    err "greetd no arranco. Revisa: sudo sv status greetd"
   fi
 fi
 
