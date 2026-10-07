@@ -1,5 +1,5 @@
 #!/bin/sh
-# install-dwl v0.8.7
+# install-dwl v0.8.8
 # Instalador de dwl (dwm para Wayland) - FUNCIONA 100% AUTOMATICO.
 #
 # Distros soportadas sin intervencion manual:
@@ -16,7 +16,7 @@
 # NO instala drivers de GPU ni Steam (lo haces tu segun tu grafica).
 #
 # Variables sobreescribibles por entorno:
-#   WMENU_FONT_SIZE=11 DWLB_FONT_SIZE=10 GREETD_VT=1 ./install-dwl-v0.8.7.sh
+#   WMENU_FONT_SIZE=11 DWLB_FONT_SIZE=10 GREETD_VT=1 ./install-dwl-v0.8.8.sh
 
 set -e
 
