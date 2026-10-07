@@ -12,7 +12,7 @@ Instalador de **dwl** (el equivalente a *dwm*, pero para **Wayland**) ya preconf
 
 ---
 
-## 📦 Qué instala
+## Qué instala
 
 | Componente | Para qué sirve |
 |---|---|
@@ -41,7 +41,7 @@ Además deja listo:
 
 ---
 
-## 🧩 Repositorios que deja activados
+## Repositorios que deja activados
 
 Al instalar los paquetes, el instalador activa también estos repositorios:
 
@@ -53,12 +53,12 @@ Al instalar los paquetes, el instalador activa también estos repositorios:
 
 Así no tienes que tocar repositorios a mano: cuando quieras Steam o el driver de tu GPU, es un solo comando.
 
-> ⚠️ **multilib y multilib/nonfree solo existen en x86_64 con glibc.** En **musl**, **aarch64** o **i686** no están,
+> **multilib y multilib/nonfree solo existen en x86_64 con glibc.** En **musl**, **aarch64** o **i686** no están,
 > y XBPS no los encuentra. Ahí sí que hay que quitarlos de la lista (ver [🩺 Si algo falla](#-si-algo-falla)).
 
 ---
 
-## 🚀 Instalación en 4 pasos
+## Instalación en 4 pasos
 
 ### 0. Primero instala `git` (es obligatorio)
 
@@ -111,7 +111,7 @@ Si tienes menos de 20 GB libres te avisará y podrás decidir si continuar igual
 
 Los **repositorios** (nonfree y multilib) no se preguntan: se activan solos al instalar los paquetes.
 
-> 💡 Si tu copia del instalador incluye una cuarta opción (`4` No cambiar), no toca ni el `KEYMAP` de la
+> Si tu copia del instalador incluye una cuarta opción (`4` No cambiar), no toca ni el `KEYMAP` de la
 > consola ni el layout de dwl: deja el teclado tal como lo tenías.
 
 ---
@@ -220,7 +220,7 @@ nano ~/Atajos.txt
 
 ---
 
-## 🎨 Personalizar tu escritorio
+## Personalizar tu escritorio
 
 | Archivo | Qué cambia | Cómo se aplica |
 |---|---|---|
