@@ -41,10 +41,28 @@
 #         /root y los grupos se daban a root.
 #  FIX 10 (0.9.7) pam_turnstile solo se anade si el modulo existe
 #         y turnstiled esta habilitado (si no, rompia el login).
+#  FIX 11 (0.9.7 rev.2) ¡EL BUG QUE CONGELABA LA PANTALLA!
+#         Si ejecutas el script desde tty1, tu shell ES el proceso
+#         supervisado agetty-tty1 (agetty -> login -> tu shell, mismo
+#         PID). 'sv force-stop agetty-tty1' = SIGKILL a tu propia
+#         sesion: el script moria y tty1 quedaba muerto (sin agetty
+#         y sin greetd). Ahora se detecta el tty/sesion y, si es
+#         peligroso, NO se toca /var/service: el cambio se programa
+#         en /etc/rc.shutdown y se aplica al reiniciar.
+#  FIX 12 (0.9.7 rev.2) sudo -v al inicio + keep-alive en segundo
+#         plano (la credencial caduca durante el 'make' de dwl/dwlb)
+#         y 'timeout' en las llamadas a sv/systemctl para que nunca
+#         se quede colgado esperando una password invisible.
 # ============================================================
 set +e
 
 VERSION="0.9.7"
+BUILD="rev.2 (anti tty1-kill)"
+
+TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
+# sudo con red de seguridad: si algo se cuelga (p.ej. pidiendo password),
+# se mata a los 25 s en vez de esperar para siempre.
+srun(){ if [ -n "$TIMEOUT_BIN" ]; then "$TIMEOUT_BIN" 25 sudo "$@"; else sudo "$@"; fi; }
 
 info(){ echo " [+] $1"; }
 warn(){ echo " [!] $1"; }
@@ -61,7 +79,7 @@ KB_LAYOUT="latam"
 KB_CONSOLE="la-latin1"
 
 echo "=========================================="
-echo " install-dwl v$VERSION - Wayland con dwl + dwlb"
+echo " install-dwl v$VERSION $BUILD"
 echo " Inicio de sesion (greetd/tuigreet) al FINAL"
 echo "=========================================="
 
@@ -71,6 +89,13 @@ REAL_USER="${SUDO_USER:-${USER:-$(id -un)}}"
 REAL_HOME="$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6)"
 [ -z "$REAL_HOME" ] && REAL_HOME="/home/$REAL_USER"
 info "Usuario destino: $REAL_USER   HOME: $REAL_HOME"
+
+# ---------- FIX 12: credencial sudo viva todo el rato ----------
+sudo -v || err "Necesitas privilegios de sudo para continuar."
+( while :; do sudo -v; sleep 60; done ) >/dev/null 2>&1 &
+SUDO_KEEPALIVE=$!
+trap 'kill "$SUDO_KEEPALIVE" 2>/dev/null' EXIT INT TERM
+ok "Credencial sudo cacheada (se renueva sola durante la compilacion)"
 
 # ---------- Deteccion de distro ----------
 FAMILIA="unknown"
@@ -343,6 +368,23 @@ done
 [ -x /usr/local/bin/dwl-session ] || sudo chmod +x /usr/local/bin/dwl-session
 ok "Sesion dwl verificada antes de tocar greetd"
 
+# --- 0b) FIX 11: detectar si tocar tty1 nos mataria la sesion ---
+# En tty1 tu shell ES el servicio agetty-tty1; pararlo = suicidio.
+ON_TTY1=0
+CUR_TTY="$(tty 2>/dev/null || true)"
+case "$CUR_TTY" in *tty1*) ON_TTY1=1 ;; esac
+IN_SESSION=0
+if [ -n "${WAYLAND_DISPLAY:-}" ] || [ -n "${DISPLAY:-}" ] || [ -n "${XDG_SESSION_ID:-}" ]; then
+  IN_SESSION=1
+fi
+[ "$ON_TTY1" -eq 1 ] && IN_SESSION=1
+DEFERRED=0
+if [ "$IN_SESSION" -eq 1 ]; then
+  info "Sesion detectada en ${CUR_TTY:-tty?}: greetd se activara en el REINICIO (modo seguro)."
+else
+  info "Sin sesion en tty1 (${CUR_TTY:-sin tty}): greetd se puede arrancar ahora mismo."
+fi
+
 # --- 1) Binarios del greeter con ruta absoluta (FIX 6) ---
 GREETD_BIN=""
 for b in /usr/bin/greetd /usr/local/bin/greetd /usr/sbin/greetd; do
@@ -419,6 +461,11 @@ if [ "$FAMILIA" = "void" ]; then
 # Se usa ruta ABSOLUTA porque runit NO hereda el PATH de tu usuario:
 # con 'exec greetd' a secas el servicio se quedaba down para siempre.
 sleep 2
+# Autocuracion de tty1: si aun queda un agetty viejo viviendo en tty1,
+# se retira su enlace y su proceso (idempotente; no toca tty2..tty6).
+rm -f /var/service/agetty-tty1
+pkill -f '/usr/bin/agetty.*tty1' 2>/dev/null
+sleep 1
 exec $GREETD_BIN -c /etc/greetd/config.toml 2>&1
 RUN
   sudo chmod 755 /etc/sv/greetd/run
@@ -437,10 +484,47 @@ LOG
     warn "svlogd no disponible: sin log de greetd (instala 'runit'/'socklog' para tenerlo)"
   fi
 
-  # --- 8a) FIX 8: habilitar y esperar a que runsvdir lo recoja ---
-  sudo sv force-stop agetty-tty1 2>/dev/null
-  sudo rm -f /var/service/agetty-tty1
-  sudo ln -sfn /etc/sv/greetd /var/service/
+  # --- 8a0) Helper idempotente: activar greetd en tty1 ---
+  sudo tee /usr/local/sbin/dwl-enable-greetd >/dev/null <<'EN'
+#!/bin/sh
+# Activa greetd en tty1 y retira agetty-tty1. Idempotente y silencioso.
+# Se ejecuta en el apagado (desde /etc/rc.shutdown) o a mano.
+rm -f /var/service/agetty-tty1
+pkill -f '/usr/bin/agetty.*tty1' 2>/dev/null
+sleep 0.5
+ln -sfn /etc/sv/greetd /var/service/
+exit 0
+EN
+  sudo chmod 755 /usr/local/sbin/dwl-enable-greetd
+
+  # --- 8a) FIX 11: si hay sesion en marcha, NO se toca /var/service ---
+  if [ "$IN_SESSION" -eq 1 ]; then
+    # ===== MODO DIFERIDO: no se toca NADA de /var/service =====
+    warn "Estas dentro de una sesion (${CUR_TTY:-tty?}): no se toca agetty ni /var/service"
+    info "   Motivo: parar agetty-tty1 mataria tu propia sesion y dejaria tty1 muerto."
+    info "   Se programa el cambio para que se aplique solo, sin riesgo."
+    # Dos ganchos, ambos idempotentes:
+    #   /etc/rc.shutdown -> se aplica al apagar/reiniciar
+    #   /etc/rc.local    -> red de seguridad si apagas con el boton
+    for RC in /etc/rc.shutdown /etc/rc.local; do
+      [ -f "$RC" ] || printf '#!/bin/sh\n# Creado por install-dwl\n' | sudo tee "$RC" >/dev/null
+      if ! sudo grep -q 'dwl-enable-greetd' "$RC" 2>/dev/null; then
+        printf '\n# install-dwl: greetd en tty1 a partir del proximo arranque\n[ -x /usr/local/sbin/dwl-enable-greetd ] && /usr/local/sbin/dwl-enable-greetd\n' | sudo tee -a "$RC" >/dev/null
+      fi
+      sudo chmod +x "$RC"
+    done
+    ok "Activacion programada en /etc/rc.shutdown y /etc/rc.local"
+    ok "Servicio greetd creado en /etc/sv/greetd y config en /etc/greetd/config.toml"
+    DEFERRED=1
+  fi
+
+  if [ "$DEFERRED" -eq 0 ]; then
+  # ===== MODO ACTIVO (tty2+, ssh, ...): se puede tocar tty1 sin riesgo =====
+  info "Paso 1/4: retirando agetty de tty1..."
+  srun sv force-stop agetty-tty1 || true
+  srun rm -f /var/service/agetty-tty1 || true
+  info "Paso 2/4: habilitando greetd en /var/service..."
+  srun ln -sfn /etc/sv/greetd /var/service/ || true
 
   if [ ! -L /var/service/greetd ]; then
     err "No se pudo crear /var/service/greetd"
@@ -454,19 +538,21 @@ LOG
     i=$((i+1)); sleep 0.5
   done
   if [ -d /var/service/greetd/supervise ]; then
+    info "Paso 3/4: arrancando greetd..."
     if pgrep -x greetd >/dev/null 2>&1; then
       # Ya habia un greetd vivo (instalacion anterior): se reinicia para
       # que relea /etc/greetd/config.toml y no queden dos peleando por tty1.
       info "greetd ya estaba en marcha: reiniciando para releer la config..."
-      sudo sv restart greetd >/dev/null 2>&1 || sudo sv start greetd >/dev/null 2>&1 || true
+      srun sv restart greetd || srun sv start greetd || true
     else
-      sudo sv start greetd >/dev/null 2>&1 || true
+      srun sv start greetd || true
     fi
   else
     warn "runsvdir no ha recogido el servicio todavia (puede que no estes bajo runit)"
   fi
 
   # verificacion: el proceso tiene que estar vivo
+  info "Paso 4/4: verificando que greetd sigue vivo..."
   i=0; GREETD_UP=0
   while [ "$i" -lt 40 ]; do
     if pgrep -x greetd >/dev/null 2>&1; then GREETD_UP=1; break; fi
@@ -485,8 +571,9 @@ LOG
     warn "greetd NO arranco. Diagnostico:"
     [ -f /var/log/greetd/current ] && { echo "  --- /var/log/greetd/current ---"; sudo tail -n 20 /var/log/greetd/current; echo "  --------------------------------"; }
     echo "  Prueba manual:  sudo sv down greetd; sudo $GREETD_BIN -c /etc/greetd/config.toml"
-    echo "  Revisa tambien: dbus/seatd arriba, tty1 libre (rm /var/service/agetty-tty1)"
+    echo "  Revisa tambien: dbus/seatd arriba, tty1 libre (sudo /usr/local/sbin/dwl-enable-greetd)"
   fi
+  fi   # <- fin del MODO ACTIVO (DEFERRED=0)
 
 else
 
@@ -500,20 +587,25 @@ Conflicts=getty@tty1.service
 INI
   sudo systemctl mask getty@tty1 2>/dev/null
   sudo systemctl enable greetd.service 2>/dev/null
-  sudo systemctl enable --now greetd.service 2>/dev/null
   sudo systemctl set-default graphical.target 2>/dev/null
-  sudo systemctl restart greetd.service 2>/dev/null
-
-  sleep 2
-  echo
-  info "Estado del servicio:"
-  sudo systemctl status greetd.service --no-pager -l 2>/dev/null | head -n 12
-
-  if systemctl is-active --quiet greetd.service; then
-    ok "greetd esta activo (systemd)"
+  if [ "${IN_SESSION:-0}" -eq 1 ]; then
+    # Mismo criterio que en runit: no reiniciar el gestor de sesion
+    # desde dentro de una sesion (mataria la sesion actual).
+    warn "Sesion activa: greetd solo se HABILITA (sin restart). Arranca tras el reboot."
+    DEFERRED=1
   else
-    FINAL_ERROR=1
-    warn "greetd no esta activo. Mira: journalctl -u greetd -b"
+    sudo systemctl enable --now greetd.service 2>/dev/null
+    sudo systemctl restart greetd.service 2>/dev/null
+    sleep 2
+    echo
+    info "Estado del servicio:"
+    sudo systemctl status greetd.service --no-pager -l 2>/dev/null | head -n 12
+    if systemctl is-active --quiet greetd.service; then
+      ok "greetd esta activo (systemd)"
+    else
+      FINAL_ERROR=1
+      warn "greetd no esta activo. Mira: journalctl -u greetd -b"
+    fi
   fi
 fi
 
@@ -524,15 +616,30 @@ echo " UNICO PASO RESTANTE:"
 echo
 echo "    sudo reboot"
 echo
-echo " Tras reiniciar veras tuigreet directamente en tty1."
+if [ "${DEFERRED:-0}" -eq 1 ]; then
+  echo " Modo seguro (estabas dentro de una sesion):"
+  echo "   * NO se ha tocado agetty ni /var/service para no matar tu sesion."
+  echo "   * El cambio se aplica SOLO: al apagar (/etc/rc.shutdown) y,"
+  echo "     por si acaso, al arrancar (/etc/rc.local), ambos llamando a"
+  echo "     /usr/local/sbin/dwl-enable-greetd"
+  echo "   * Al arrancar: agetty-tty1 fuera, greetd en tty1 -> tuigreet."
+  echo
+  echo " Si queres activarlo YA sin reiniciar, desde tty2+:"
+  echo "     sudo /usr/local/sbin/dwl-enable-greetd"
+  echo
+else
+  echo " greetd ya esta habilitado y verificado."
+  echo " Tras reiniciar veras tuigreet directamente en tty1."
+fi
 echo " Inicia sesion con tu usuario y entras a dwl."
 echo
 echo " Si NO aparece tuigreet tras el reboot:"
 echo "   Void:  sudo sv status greetd"
 echo "          sudo tail -n 30 /var/log/greetd/current"
-echo "          sudo sv restart greetd"
+echo "          sudo /usr/local/sbin/dwl-enable-greetd"
 echo "   Arch:  systemctl status greetd"
 echo "          journalctl -u greetd -b"
+echo "   (recuerda: tty2..tty6 siguen con agetty, entra por ahi)"
 echo
 echo " Atajos:  Super+Enter terminal    Super+d menu"
 echo "          Super+q cerrar          Super+w barra on/off"
