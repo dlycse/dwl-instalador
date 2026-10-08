@@ -12,12 +12,42 @@ TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
 # se mata a los 25 s en vez de esperar para siempre.
 srun(){ if [ -n "$TIMEOUT_BIN" ]; then "$TIMEOUT_BIN" 25 sudo "$@"; else sudo "$@"; fi; }
 
-info(){ echo " [+] $1"; }
-warn(){ echo " [!] $1"; }
-ok(){   echo " [OK] $1"; }
-err(){  echo " [x] $1"; exit 1; }
+# ---------- Estetica: solo visual, no cambia la logica ----------
+# Colores 24-bit solo si la salida es una terminal (en logs/tuberias, texto plano).
+if [ -t 1 ]; then
+  ESC="$(printf '\033')"
+  R="$ESC[0m"; B="$ESC[1m"; DIM="$ESC[2m"
+  RED="$ESC[38;2;255;45;61m"; CYAN="$ESC[38;2;119;226;242m"
+  YEL="$ESC[38;2;255;214;31m"; GRN="$ESC[38;2;90;230;130m"; GREY="$ESC[38;2;120;120;130m"
+else
+  R=""; B=""; DIM=""; RED=""; CYAN=""; YEL=""; GRN=""; GREY=""
+fi
+line(){ printf "%s%s%s\n" "$RED" "────────────────────────────────────────────────────────────" "$R"; }
+# hdr TITULO: caja cyan de ancho fijo. El titulo va en ASCII (sin tildes)
+# porque en sh ${#var} cuenta bytes y el ancho de la caja depende de eso.
+hdr(){
+  _pad=$((59 - 13 - ${#1})); [ "$_pad" -lt 1 ] && _pad=1
+  printf "\n%s%s  ╔═══════════════════════════════════════════════════════════╗\n" "$CYAN" "$B"
+  printf "  ║   ▓▒░  %s  ░▒▓%*s║\n" "$1" "$_pad" ""
+  printf "  ╚═══════════════════════════════════════════════════════════╝%s\n" "$R"
+}
+banner(){
+  printf "%s%s" "$RED" "$B"
+  cat <<'BANNER'
+  █▀▄ █░█░█ █░░
+  █▄▀ ▀▄▀▄▀ █▄▄
+BANNER
+  printf "%s░▒▓ INSTALADOR DE DWL · WAYLAND ▓▒░%s\n" "$CYAN" "$R"
+  printf "%s  v%s · %s%s\n" "$GREY" "$VERSION" "$BUILD" "$R"
+  printf "%s  by %s%s%s\n" "$GREY" "$CYAN" "dlycse" "$R"
+  line
+}
+info(){ printf "%s▸%s %s\n" "$CYAN" "$R" "$1"; }
+warn(){ printf "  %s⚠%s %s\n" "$YEL" "$R" "$1"; }
+ok(){   printf "  %s✓%s %s\n" "$GRN" "$R" "$1"; }
+err(){  printf "  %s✗%s %s\n" "$RED" "$R" "$1"; exit 1; }
 confirm(){
-  printf " [?] %s [s/N]: " "$1"
+  printf "  %s[?]%s %s [s/N]: " "$CYAN" "$R" "$1"
   read -r R
   case "$R" in s|S|y|Y|si|SI|yes|YES) return 0;; *) return 1;; esac
 }
@@ -26,10 +56,9 @@ DWLB_FONT_SIZE=10
 KB_LAYOUT="latam"
 KB_CONSOLE="la-latin1"
 
-echo "=========================================="
-echo " install-dwl v$VERSION $BUILD"
-echo " Inicio de sesion (greetd/tuigreet) al FINAL"
-echo "=========================================="
+[ -t 1 ] && clear 2>/dev/null
+banner
+printf "  %sInicio de sesion (greetd/tuigreet) al FINAL%s\n" "$DIM" "$R"
 
 # ---------- FIX 9: usuario y HOME reales (sudo seguro) ----------
 REAL_USER="${SUDO_USER:-${USER:-$(id -un)}}"
@@ -45,6 +74,7 @@ SUDO_KEEPALIVE=$!
 trap 'kill "$SUDO_KEEPALIVE" 2>/dev/null' EXIT INT TERM
 ok "Credencial sudo cacheada (se renueva sola durante la compilacion)"
 
+hdr "DETECCION DEL SISTEMA"
 # ---------- Deteccion de distro ----------
 FAMILIA="unknown"
 [ -f /etc/os-release ] && . /etc/os-release
@@ -65,11 +95,12 @@ else
   ok "Espacio libre: ${FREE_GB:-desconocido} GB"
 fi
 
+hdr "CONFIGURACION"
 # ---------- Teclado ----------
 echo
-echo "Selecciona distribucion de teclado:"
-echo "  1) us    2) es    3) latam"
-printf "Opcion [3]: "; read -r KB; KB="${KB:-3}"
+printf "  %sSelecciona distribucion de teclado:%s\n" "$B" "$R"
+printf "    %s1%s) us    %s2%s) es    %s3%s) latam\n" "$CYAN" "$R" "$CYAN" "$R" "$CYAN" "$R"
+printf "  %sOpcion [3]:%s " "$CYAN" "$R"; read -r KB; KB="${KB:-3}"
 case "$KB" in
   1) KB_LAYOUT="us"; KB_CONSOLE="us" ;;
   2) KB_LAYOUT="es"; KB_CONSOLE="es" ;;
@@ -79,7 +110,7 @@ ok "Teclado seleccionado: $KB_LAYOUT"
 
 # ---------- Zona horaria ----------
 echo
-printf " [?] Pais o zona horaria [America/Bogota]: "; read -r TZIN
+printf "  %s[?]%s Pais (ejemplo: Mexico, Paraguay, Bolivia, etc.) %s[vacio = America/Bogota]%s: " "$CYAN" "$R" "$GREY" "$R"; read -r TZIN
 TZIN="${TZIN:-America/Bogota}"
 resolv_tz(){
   case "$1" in
@@ -125,6 +156,7 @@ else
 fi
 
 if [ "$FAMILIA" = "void" ]; then
+  hdr "PAQUETES - VOID LINUX"
   # ==================== VOID LINUX ====================
   # --- Repositorios extra: nonfree (NVIDIA/Steam) y multilib (32 bits) ---
   # OJO: multilib solo existe en x86_64 con glibc. En musl/aarch64/i686
@@ -188,6 +220,7 @@ if [ "$FAMILIA" = "void" ]; then
   sudo loadkeys "$KB_CONSOLE" 2>/dev/null || true
 
 else
+  hdr "PAQUETES - ARCH LINUX"
   # ==================== ARCH LINUX ====================
   info "Instalando paquetes para Arch Linux..."
   sudo pacman -Sy --noconfirm archlinux-keyring 2>/dev/null || true
@@ -265,6 +298,7 @@ info "Grupos de hardware para $REAL_USER: $SEAT_GROUP, video, input"
 sudo usermod -aG "$SEAT_GROUP",video,input "$REAL_USER"
 warn "Los grupos se aplican al reiniciar."
 
+hdr "COMPILAR DWL"
 # ---------- Compilar dwl ----------
 echo
 info "Compilando dwl..."
@@ -356,6 +390,7 @@ make || err "Error compilando dwl. Mira el error de arriba (suele ser wlroots)."
 sudo make install
 ok "dwl compilado e instalado"
 
+hdr "COMPILAR DWLB"
 # ---------- Compilar dwlb ----------
 echo
 info "Compilando dwlb (barra de estado)..."
@@ -374,6 +409,7 @@ make
 sudo make install
 ok "dwlb instalado (el aviso fcft_set_scaling_filter es normal)"
 
+hdr "TEMA DE LA BARRA"
 # ---------- Tema dwlb ----------
 sudo -u "$REAL_USER" mkdir -p "$REAL_HOME/.config/dwlb"
 cat > "$REAL_HOME/.config/dwlb/config" <<EOF
@@ -416,6 +452,7 @@ printf '^fg(89b4fa)CPU^fg(cdd6f4) %s  ^fg(89b4fa)RAM^fg(cdd6f4) %s%s  ^fg(89b4fa
 STAT
 sudo chmod +x /usr/local/bin/dwlb-status
 
+hdr "BARRA Y FONDO"
 # ---------- Runner barra + wallpaper ----------
 sudo tee /usr/local/bin/dwl-status-runner >/dev/null <<'RUN'
 #!/bin/sh
@@ -482,6 +519,7 @@ if [ ! -f "$REAL_HOME/Pictures/wallpaper.jpg" ]; then
   sudo chown "$REAL_USER:$REAL_USER" "$REAL_HOME/Pictures/wallpaper.jpg" 2>/dev/null
 fi
 
+hdr "CHULETA DE ATAJOS"
 # ---------- Chuleta de atajos ----------
 cat > "$REAL_HOME/Atajos.txt" <<'ATAJ'
 ================================================
@@ -543,6 +581,7 @@ ATAJ
 sudo chown "$REAL_USER:$REAL_USER" "$REAL_HOME/Atajos.txt" 2>/dev/null
 ok "Chuleta de atajos en ~/Atajos.txt"
 
+hdr "SESION DWL"
 # ---------- Script de sesion dwl ----------
 info "Creando script de sesion..."
 grep -qw hypervisor /proc/cpuinfo && VM_FLAGS="export WLR_NO_HARDWARE_CURSORS=1 WLR_RENDERER=pixman" || VM_FLAGS=""
@@ -601,10 +640,8 @@ ok "Sesion Wayland registrada: /usr/share/wayland-sessions/dwl.desktop"
 #   tuigreet arrancaba contra una sesion inexistente y greetd caia.
 # =========================================================================
 # =========================================================================
-echo
-echo "============================================================"
-echo " BLOQUE FINAL v$VERSION — greetd / tuigreet (inicio de sesion)"
-echo "============================================================"
+hdr "INICIO DE SESION"
+printf "  %sgreetd / tuigreet · bloque final v%s%s\n" "$DIM" "$VERSION" "$R"
 
 # --- 0) Comprobaciones previas: la sesion tiene que existir YA ---
 for f in /usr/local/bin/dwl-session /usr/local/bin/dwl-status-runner /usr/share/wayland-sessions/dwl.desktop; do
@@ -700,9 +737,9 @@ user = "$GREETER_USER"
 TOML
 sudo chmod 644 /etc/greetd/config.toml
 ok "/etc/greetd/config.toml escrito"
-echo "-------------------------------------------"
+printf "%s-------------------------------------------%s\n" "$GREY" "$R"
 sudo cat /etc/greetd/config.toml
-echo "-------------------------------------------"
+printf "%s-------------------------------------------%s\n" "$GREY" "$R"
 
 if [ "$FAMILIA" = "void" ]; then
 
@@ -881,12 +918,9 @@ INI
 fi
 
 # --- 9) Resumen final ---
-echo
-echo "============================================================"
-echo " UNICO PASO RESTANTE:"
-echo
-echo "    sudo reboot"
-echo
+hdr "INSTALACION COMPLETA"
+printf "\n  %sUNICO PASO RESTANTE:%s\n\n" "$YEL$B" "$R"
+printf "      %s%ssudo reboot%s\n\n" "$B" "$YEL" "$R"
 if [ "${DEFERRED:-0}" -eq 1 ]; then
   echo " Modo seguro (estabas dentro de una sesion):"
   echo "   * NO se ha tocado agetty ni /var/service para no matar tu sesion."
@@ -915,7 +949,7 @@ echo
 echo " Atajos:  Super+Enter terminal    Super+d menu"
 echo "          Super+q cerrar          Super+w barra on/off"
 echo "          Super+Shift+e salir de sesion"
-echo "============================================================"
+line
 [ "${FINAL_ERROR:-0}" -eq 1 ] && err "Revisa los errores de arriba antes de reiniciar."
-ok "Instalacion v$VERSION completada. Nos vemos tras el reboot."
+ok "Instalacion v$VERSION completada. Realiza ${B}sudo reboot${R} para cargar todo sin problema."
 exit 0
