@@ -53,11 +53,21 @@
 #         plano (la credencial caduca durante el 'make' de dwl/dwlb)
 #         y 'timeout' en las llamadas a sv/systemctl para que nunca
 #         se quede colgado esperando una password invisible.
+#  FIX 13 (0.9.7 rev.3) Arch: wlroots se DETECTA en los repos
+#         (wlroots0.20 / 0.19 / 0.18...). El nombre fijo
+#         'wlroots0.19' desaparecio y pacman abortaba TODA la
+#         instalacion por ese unico paquete.
+#  FIX 14 (0.9.7 rev.3) Arch: la lista se filtra con 'pacman -Si',
+#         se instala en lote y, si falla, uno a uno (+ AUR con
+#         yay/paru). Ningun paquete perdido tumba la instalacion.
+#  FIX 15 (0.9.7 rev.3) dwl trae "wlroots-0.20" escrito a fuego en
+#         config.mk: se detecta el pkg-config real del sistema y se
+#         parchea, asi compila igual con 0.19, 0.20 o la que venga.
 # ============================================================
 set +e
 
 VERSION="0.9.7"
-BUILD="rev.2 (anti tty1-kill)"
+BUILD="rev.3 (anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
 # sudo con red de seguridad: si algo se cuelga (p.ej. pidiendo password),
@@ -176,11 +186,59 @@ else
   # ==================== ARCH LINUX ====================
   info "Instalando paquetes para Arch Linux..."
   sudo pacman -Sy --noconfirm archlinux-keyring 2>/dev/null || true
-  if ! sudo pacman -Sy --needed --noconfirm base-devel git libinput wayland wayland-protocols libxkbcommon wlroots0.19 seatd xorg-xwayland mesa libdrm pango cairo pixman fcft tllist foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulse swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano ttf-nerd-fonts-symbols ttf-nerd-fonts-symbols-mono lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd greetd-tuigreet; then
-    warn "Fallo la descarga; regenerando mirrorlist..."
+
+  # Lista SIN wlroots: el nombre cambia cada serie (0.18 -> 0.19 -> 0.20...)
+  ARCH_PKGS="base-devel git libinput wayland wayland-protocols libxkbcommon seatd xorg-xwayland mesa libdrm pango cairo pixman fcft tllist foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulse swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano ttf-nerd-fonts-symbols ttf-nerd-fonts-symbols-mono lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd greetd-tuigreet"
+
+  # --- FIX 13: wlroots se detecta en los repos (nunca a mano) ---
+  WLR_PKG=""
+  for c in wlroots0.20 wlroots0.19 wlroots0.18 wlroots0.17 wlroots; do
+    if pacman -Si "$c" >/dev/null 2>&1; then WLR_PKG="$c"; break; fi
+  done
+  if [ -n "$WLR_PKG" ]; then
+    ok "wlroots en los repos: $WLR_PKG (detectado, no escrito a mano)"
+    ARCH_PKGS="$ARCH_PKGS $WLR_PKG"
+  else
+    warn "Ningun wlroots en los repos: dwl no podra compilar"
+  fi
+
+  # --- FIX 14: un paquete que ya no existe NO tumba la instalacion ---
+  PKG_OK=""; PKG_NO=""
+  for p in $ARCH_PKGS; do
+    if pacman -Si "$p" >/dev/null 2>&1 || pacman -Q "$p" >/dev/null 2>&1; then
+      PKG_OK="$PKG_OK $p"
+    else
+      PKG_NO="$PKG_NO $p"
+    fi
+  done
+  [ -n "$PKG_NO" ] && warn "No estan en los repos, se omiten:$PKG_NO"
+
+  arch_install(){
+    # 1º intento: todo junto (rapido). Si falla: uno a uno (robusto).
+    # shellcheck disable=SC2086
+    sudo pacman -Sy --needed --noconfirm $PKG_OK ||
+    for p in $PKG_OK; do
+      sudo pacman -S --needed --noconfirm "$p" >/dev/null 2>&1 || warn "No se pudo instalar: $p"
+    done
+  }
+  if ! arch_install; then
+    warn "Reintentando con mirrorlist regenerada..."
     sudo pacman -Sy --noconfirm reflector 2>/dev/null || true
     sudo reflector --latest 20 --sort rate --save /etc/pacman.d/mirrorlist 2>/dev/null || true
-    sudo pacman -Sy --needed --noconfirm base-devel git libinput wayland wayland-protocols libxkbcommon wlroots0.19 seatd xorg-xwayland mesa libdrm pango cairo pixman fcft tllist foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulse swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano ttf-nerd-fonts-symbols ttf-nerd-fonts-symbols-mono lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd greetd-tuigreet || err "Fallo instalando paquetes."
+    arch_install || true
+  fi
+
+  # --- Los que falten se intentan por AUR si hay helper ---
+  if [ -n "$PKG_NO" ]; then
+    for h in yay paru pikaur aura; do
+      if command -v "$h" >/dev/null 2>&1; then
+        info "Intentando por AUR con $h:$PKG_NO"
+        # shellcheck disable=SC2086
+        sudo -u "$REAL_USER" "$h" -S --needed --noconfirm $PKG_NO >/dev/null 2>&1 \
+          || warn "El AUR fallo para:$PKG_NO"
+        break
+      fi
+    done
   fi
   sudo systemctl enable --now seatd.service 2>/dev/null || true
   sudo systemctl enable --now dbus.service 2>/dev/null || true
@@ -212,8 +270,25 @@ cd dwl || err "No se pudo entrar en $REAL_HOME/dwl"
 rm -f config.h
 cp config.def.h config.h
 sed -i "s/\.layout = NULL,/.layout = \"$KB_LAYOUT\",/" config.h
+
+# --- FIX 15: casar dwl con el wlroots REAL del sistema ---
+# dwl trae 'wlroots-0.20' (o 0.19...) escrito a fuego en config.mk.
+# Si tu distro trae otra serie, aqui se ajusta al que este instalado.
+WLR_PC=""
+for c in wlroots-0.20 wlroots-0.19 wlroots-0.18 wlroots-0.17 wlroots; do
+  if pkg-config --exists "$c" 2>/dev/null; then WLR_PC="$c"; break; fi
+done
+if [ -n "$WLR_PC" ]; then
+  ok "pkg-config de wlroots detectado: $WLR_PC"
+  sed -i -e "s/wlroots-0\.[0-9]*/$WLR_PC/g" \
+         -e "s/--cflags wlroots\([\`)]\| \)/--cflags $WLR_PC\1/g" \
+         -e "s/--libs wlroots\([\`)]\| \)/--libs $WLR_PC\1/g" config.mk
+else
+  warn "pkg-config no encuentra wlroots: dwl casi seguro fallara al compilar"
+fi
+
 make clean 2>/dev/null
-make || err "Error compilando dwl. Revisa dependencias."
+make || err "Error compilando dwl. Mira el error de arriba (suele ser wlroots)."
 sudo make install
 ok "dwl compilado e instalado"
 
