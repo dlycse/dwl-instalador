@@ -1,5 +1,5 @@
 #!/bin/sh
-# install-dwl v0.9.6
+# install-dwl v0.9.7
 # Instalador de dwl (dwm para Wayland) - FUNCIONA 100% AUTOMATICO.
 #
 # Distros soportadas sin intervencion manual:
@@ -16,7 +16,7 @@
 # NO instala drivers de GPU ni Steam (lo haces tu segun tu grafica).
 #
 # Variables sobreescribibles por entorno:
-#   WMENU_FONT_SIZE=11 DWLB_FONT_SIZE=10 GREETD_VT=1 ./install-dwl-v0.9.6.sh
+#   WMENU_FONT_SIZE=11 DWLB_FONT_SIZE=10 GREETD_VT=1 ./install-dwl-v0.9.7.sh
 
 set -e
 
@@ -27,7 +27,7 @@ warn(){ printf "%b[!]%b %s\n" "$Y" "$N" "$1"; }
 err() { printf "%b[x]%b %s\n" "$R" "$N" "$1"; exit 1; }
 hdr() { printf "%b%s%b\n" "$C" "$1" "$N"; }
 
-VERSION="v0.9.6"
+VERSION="v0.9.7"
 [ "$(id -u)" -eq 0 ] && err "No ejecutes el script como root (los archivos quedarian en /root)."
 command -v sudo >/dev/null || err "Falta sudo: agrega tu usuario a sudoers con visudo."
 command -v git  >/dev/null || err "Falta git: instalalo primero."
@@ -641,8 +641,6 @@ if [ "$NEED_TURNSTILE" -eq 1 ]; then
     echo -e "\nsession optional pam_turnstile.so" | sudo tee -a "$PAMF" >/dev/null
   fi
 fi
-# Habilitar greetd PERO NO arrancarlo ahora (para no interrumpir el script)
-svc_on greetd
 
 # Recargar systemd si hace falta
 svc_daemon_reload
@@ -658,19 +656,47 @@ ExecStartPre=/bin/sleep 2
 Conflicts=getty@tty1.service
 INI
   sudo systemctl stop greetd.service 2>/dev/null || true
+  # Habilitar lo ultimo
+  sudo systemctl enable greetd.service 2>/dev/null || true
   info "greetd habilitado; arrancara automaticamente DESPUES de reiniciar."
 else
-  # En Void: asegurarse que el run script espera por seatd de forma segura
-  if [ -f /etc/sv/greetd/run ] && ! grep -q "sv status seatd" /etc/sv/greetd/run; then
-    sudo tee /etc/sv/greetd/run >/dev/null <<'RUN'
+  # En Void: PASO 1 - DETENER Y DESHABILITAR greetd PRIMERO para que runit no lo supervise mientras lo modificamos
+  info "Configurando greetd..."
+  sudo sv stop greetd 2>/dev/null || true
+  sudo rm -f /var/service/greetd 2>/dev/null
+  # Quitar agetty de la tty de greetd
+  disable_getty_vt "$GREETD_VT"
+  # Asegurarse que el usuario greeter existe y tiene permisos
+  id -u "$GREETER_USR" >/dev/null 2>&1 || sudo useradd -r -s /sbin/nologin -d /var/lib/greetd "$GREETER_USR"
+  sudo usermod -aG tty,video,input "$GREETER_USR"
+  sudo mkdir -p /var/lib/greetd; sudo chown "$GREETER_USR:$GREETER_USR" /var/lib/greetd 2>/dev/null; sudo chmod 700 /var/lib/greetd
+  # Wrapper que espera por GPU
+  sudo tee /usr/local/bin/greetd-tuigreet-wrapper >/dev/null <<'WRAP'
 #!/bin/sh
-# Esperar a que seatd este listo
+sleep 2
+exec tuigreet --cmd /usr/local/bin/dwl-session
+WRAP
+  sudo chmod +x /usr/local/bin/greetd-tuigreet-wrapper
+  # Configuracion TOML
+  sudo mkdir -p /etc/greetd
+  sudo tee /etc/greetd/config.toml >/dev/null <<TOML
+[terminal]
+vt = $GREETD_VT
+[default_session]
+command = "/usr/local/bin/greetd-tuigreet-wrapper"
+user = "$GREETER_USR"
+TOML
+  # Escribir el run script de greetd AHORA que no esta supervisado
+  sudo tee /etc/sv/greetd/run >/dev/null <<'RUN'
+#!/bin/sh
+# Esperar a que seatd este listo antes de arrancar
 while ! sv status seatd 2>/dev/null | grep -q "^run: "; do sleep 0.5; done
 sleep 2
 exec greetd -c /etc/greetd/config.toml
 RUN
-    sudo chmod +x /etc/sv/greetd/run
-  fi
+  sudo chmod +x /etc/sv/greetd/run
+  # ULTIMO PASO: volver a habilitar greetd cuando TODO este listo, deteniendolo inmediatamente
+  sudo ln -sf /etc/sv/greetd /var/service/
   sudo sv stop greetd 2>/dev/null || true
   info "greetd habilitado; arrancara automaticamente DESPUES de reiniciar."
 fi
