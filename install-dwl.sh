@@ -1,27 +1,55 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0 — Wayland con dwl + dwlb (Void + Arch)
+# install-dwl v0.9.7 — Wayland con dwl + dwlb (Void + Arch)
 # ------------------------------------------------------------
-# CORRECCIONES sobre v1.0 (fallos reportados en Void Linux):
+# CAMBIO PRINCIPAL RESPECTO A v1.0 / v1.1:
+#   TODO lo relacionado con el INICIO DE SESION (usuario greeter,
+#   /etc/greetd/config.toml, servicio runit/systemd de greetd,
+#   tuigreet, PAM y el arranque del servicio) se ha movido AL
+#   FINAL DEL SCRIPT, como ultimo bloque de codigo.
+#
+#   Motivo: en v1.x greetd se configuraba y se habilitaba en
+#   medio del script, antes de que existieran
+#   /usr/local/bin/dwl-session y
+#   /usr/share/wayland-sessions/dwl.desktop. runit/systemd
+#   arrancaba greetd, tuigreet lanzaba una sesion incompleta o
+#   moria, y el servicio quedaba "down" / crashlooping.
+#
+#   Ahora el orden es:
+#     1) paquetes  2) kernel  3) servicios base  4) dwl
+#     5) dwlb      6) tema + barra  7) wallpaper
+#     8) dwl-session  9) rebuilders  10) wayland-sessions
+#    11) >>> INICIO DE SESION (greetd/tuigreet) <<<  <- FINAL
+#
+# CORRECCIONES ACUMULADAS:
 #  FIX 1  greetd corre como ROOT (nunca con chpst -u greetd).
-#         greetd gestiona VTs y PAM: como usuario moria al
-#         instante. El usuario greetd solo ejecuta tuigreet.
-#  FIX 2  SIN archivo 'down' y SIN 'sv stop': v1.0 lo creaba,
-#         runit veia el servicio pero no lo arrancaba NUNCA
-#         -> tty1 muerto (agetty-tty1 ya habia sido borrado).
-#  FIX 3  Kernel dinamico: se lee lo publicado con xbps-query,
-#         no versiones 7.x inventadas que no existen en repos.
-#  FIX 4  Se habilitan seatd, dbus y turnstiled en /var/service
-#         (dwl/libseat y pam_turnstile los necesitan).
-#  FIX 5  Botones de power de tuigreet solo si existe loginctl
-#         (Arch). En Void no hay loginctl -> botones fantasma.
+#  FIX 2  SIN archivo 'down' y SIN 'sv stop' (v1.0 dejaba el
+#         servicio instalado pero jamas arrancado -> tty1 muerto).
+#  FIX 3  Kernel dinamico leido con xbps-query.
+#  FIX 4  seatd, dbus y turnstiled habilitados en /var/service.
+#  FIX 5  Botones de power de tuigreet solo si existe loginctl.
+#  FIX 6  (0.9.7) Ruta ABSOLUTA al binario greetd en el 'run' de
+#         runit: runit no hereda el PATH del usuario y 'exec
+#         greetd' fallaba en silencio -> servicio down permanente.
+#  FIX 7  (0.9.7) Servicio de LOG (svlogd) para greetd, para que
+#         se pueda ver por que no arranca (/var/log/greetd/current).
+#  FIX 8  (0.9.7) Espera activa a que runsvdir cree
+#         /var/service/greetd/supervise antes de 'sv start', y
+#         verificacion final de que el proceso esta vivo.
+#  FIX 9  (0.9.7) Se usa SUDO_USER/HOME real: si ejecutabas el
+#         script con sudo, $USER era root y dwl se clonaba en
+#         /root y los grupos se daban a root.
+#  FIX 10 (0.9.7) pam_turnstile solo se anade si el modulo existe
+#         y turnstiled esta habilitado (si no, rompia el login).
 # ============================================================
 set +e
 
+VERSION="0.9.7"
+
 info(){ echo " [+] $1"; }
 warn(){ echo " [!] $1"; }
-ok(){ echo " [OK] $1"; }
-err(){ echo " [x] $1"; exit 1; }
+ok(){   echo " [OK] $1"; }
+err(){  echo " [x] $1"; exit 1; }
 confirm(){
   printf " [?] %s [s/N]: " "$1"
   read -r R
@@ -33,9 +61,16 @@ KB_LAYOUT="latam"
 KB_CONSOLE="la-latin1"
 
 echo "=========================================="
-echo " install-dwl v1.1 - Wayland con dwl + dwlb"
-echo " Void: greetd/root + kernel dinamico FIXED"
+echo " install-dwl v$VERSION - Wayland con dwl + dwlb"
+echo " Inicio de sesion (greetd/tuigreet) al FINAL"
 echo "=========================================="
+
+# ---------- FIX 9: usuario y HOME reales (sudo seguro) ----------
+REAL_USER="${SUDO_USER:-${USER:-$(id -un)}}"
+[ -z "$REAL_USER" ] || [ "$REAL_USER" = "root" ] && REAL_USER="$(id -un 2>/dev/null)"
+REAL_HOME="$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6)"
+[ -z "$REAL_HOME" ] && REAL_HOME="/home/$REAL_USER"
+info "Usuario destino: $REAL_USER   HOME: $REAL_HOME"
 
 # ---------- Deteccion de distro ----------
 FAMILIA="unknown"
@@ -63,7 +98,7 @@ ok "Teclado seleccionado: $KB_LAYOUT"
 if [ "$FAMILIA" = "void" ]; then
   # ==================== VOID LINUX ====================
   info "Instalando paquetes base para Void Linux..."
-  sudo xbps-install -Sy base-devel libinput-devel wayland-devel wayland-protocols libxkbcommon-devel wlroots-devel libseat-devel seatd xorg-server-xwayland mesa-dri libdrm-devel pango-devel cairo-devel pixman-devel libgudev-devel fcft-devel tllist foot wmenu fastfetch pipewire wireplumber alsa-pipewire swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd tuigreet turnstile || err "Fallo instalando paquetes."
+  sudo xbps-install -Sy base-devel git libinput-devel wayland-devel wayland-protocols libxkbcommon-devel wlroots-devel libseat-devel seatd xorg-server-xwayland mesa-dri libdrm-devel pango-devel cairo-devel pixman-devel libgudev-devel fcft-devel tllist foot wmenu fastfetch pipewire wireplumber alsa-pipewire swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd tuigreet turnstile || err "Fallo instalando paquetes."
   GREETER_USER="greetd"
   SEAT_GROUP="_seatd"
 
@@ -74,7 +109,6 @@ if [ "$FAMILIA" = "void" ]; then
   if confirm "Buscar e instalar el kernel mas reciente de los repos?"; then
     info "Sincronizando indice de paquetes..."
     sudo xbps-install -S >/dev/null 2>&1
-    # Lista TODOS los metapaquetes linuxX.Y publicados y toma el mayor
     LATEST_KERN="$(xbps-query -Rs linux 2>/dev/null | grep -oE 'linux[0-9]+\.[0-9]+-' | tr -d '-' | sort -Vu | tail -n1)"
     CURRENT_SERIES="linux$(uname -r | cut -d. -f1,2)"
     if [ -n "$LATEST_KERN" ] && [ "$LATEST_KERN" != "$CURRENT_SERIES" ]; then
@@ -93,11 +127,12 @@ if [ "$FAMILIA" = "void" ]; then
 
   # ---------- FIX 4: servicios base de runit ----------
   echo
-  info "Habilitando servicios base (seatd, dbus, turnstiled)..."
+  info "Habilitando servicios base (dbus, seatd, turnstiled)..."
   for SVC in dbus seatd turnstiled; do
     if [ -d "/etc/sv/$SVC" ]; then
-      sudo rm -f "/etc/sv/$SVC/down"
+      sudo rm -f "/etc/sv/$SVC/down" "/var/service/$SVC/down"
       sudo ln -sfn "/etc/sv/$SVC" /var/service/
+      sudo sv start "$SVC" >/dev/null 2>&1
       ok "Servicio habilitado: $SVC"
     else
       warn "No existe /etc/sv/$SVC (revisa que el paquete este instalado)"
@@ -116,13 +151,14 @@ else
   # ==================== ARCH LINUX ====================
   info "Instalando paquetes para Arch Linux..."
   sudo pacman -Sy --noconfirm archlinux-keyring 2>/dev/null || true
-  if ! sudo pacman -Sy --needed --noconfirm base-devel libinput wayland wayland-protocols libxkbcommon wlroots0.19 seatd xorg-xwayland mesa libdrm pango cairo pixman fcft tllist foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulse swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano ttf-nerd-fonts-symbols ttf-nerd-fonts-symbols-mono lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd greetd-tuigreet; then
+  if ! sudo pacman -Sy --needed --noconfirm base-devel git libinput wayland wayland-protocols libxkbcommon wlroots0.19 seatd xorg-xwayland mesa libdrm pango cairo pixman fcft tllist foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulse swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano ttf-nerd-fonts-symbols ttf-nerd-fonts-symbols-mono lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd greetd-tuigreet; then
     warn "Fallo la descarga; regenerando mirrorlist..."
     sudo pacman -Sy --noconfirm reflector 2>/dev/null || true
     sudo reflector --latest 20 --sort rate --save /etc/pacman.d/mirrorlist 2>/dev/null || true
-    sudo pacman -Sy --needed --noconfirm base-devel libinput wayland wayland-protocols libxkbcommon wlroots0.19 seatd xorg-xwayland mesa libdrm pango cairo pixman fcft tllist foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulse swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano ttf-nerd-fonts-symbols ttf-nerd-fonts-symbols-mono lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd greetd-tuigreet || err "Fallo instalando paquetes."
+    sudo pacman -Sy --needed --noconfirm base-devel git libinput wayland wayland-protocols libxkbcommon wlroots0.19 seatd xorg-xwayland mesa libdrm pango cairo pixman fcft tllist foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulse swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano ttf-nerd-fonts-symbols ttf-nerd-fonts-symbols-mono lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd greetd-tuigreet || err "Fallo instalando paquetes."
   fi
   sudo systemctl enable --now seatd.service 2>/dev/null || true
+  sudo systemctl enable --now dbus.service 2>/dev/null || true
   GREETER_USER="greeter"
   SEAT_GROUP="seat"
 
@@ -137,17 +173,17 @@ fi
 
 # ---------- Permisos de usuario ----------
 echo
-info "Grupos de hardware para $USER: $SEAT_GROUP, video, input"
-sudo usermod -aG "$SEAT_GROUP",video,input "$USER"
+info "Grupos de hardware para $REAL_USER: $SEAT_GROUP, video, input"
+sudo usermod -aG "$SEAT_GROUP",video,input "$REAL_USER"
 warn "Los grupos se aplican al reiniciar."
 
 # ---------- Compilar dwl ----------
 echo
 info "Compilando dwl..."
-cd "$HOME"
-[ ! -d dwl ] && git clone https://codeberg.org/dwl/dwl.git
-cd dwl
-[ "$(stat -c %U . 2>/dev/null)" != "$USER" ] && sudo chown -R "$USER:$USER" .
+cd "$REAL_HOME" || err "No existe $REAL_HOME"
+[ ! -d dwl ] && sudo -u "$REAL_USER" git clone https://codeberg.org/dwl/dwl.git
+cd dwl || err "No se pudo entrar en $REAL_HOME/dwl"
+[ "$(stat -c %U . 2>/dev/null)" != "$REAL_USER" ] && sudo chown -R "$REAL_USER:$REAL_USER" .
 rm -f config.h
 cp config.def.h config.h
 sed -i "s/\.layout = NULL,/.layout = \"$KB_LAYOUT\",/" config.h
@@ -159,10 +195,10 @@ ok "dwl compilado e instalado"
 # ---------- Compilar dwlb ----------
 echo
 info "Compilando dwlb (barra de estado)..."
-cd "$HOME"
-[ ! -d dwlb ] && git clone https://github.com/kolunmi/dwlb.git
-cd dwlb
-[ "$(stat -c %U . 2>/dev/null)" != "$USER" ] && sudo chown -R "$USER:$USER" .
+cd "$REAL_HOME" || exit 1
+[ ! -d dwlb ] && sudo -u "$REAL_USER" git clone https://github.com/kolunmi/dwlb.git
+cd dwlb || err "No se pudo entrar en $REAL_HOME/dwlb"
+[ "$(stat -c %U . 2>/dev/null)" != "$REAL_USER" ] && sudo chown -R "$REAL_USER:$REAL_USER" .
 [ -f config.def.h ] && [ ! -f config.h ] && cp config.def.h config.h
 # Parche compatibilidad versiones nuevas de wayland
 if grep -qE 'zwlr_layer_shell_v1_interface, [0-9]+\)' dwlb.c 2>/dev/null; then
@@ -174,9 +210,9 @@ make
 sudo make install
 ok "dwlb instalado (el aviso fcft_set_scaling_filter es normal)"
 
-# ---------- Tema dwlb (proporcional a wmenu) ----------
-mkdir -p "$HOME/.config/dwlb"
-cat > "$HOME/.config/dwlb/config" <<EOF
+# ---------- Tema dwlb ----------
+sudo -u "$REAL_USER" mkdir -p "$REAL_HOME/.config/dwlb"
+cat > "$REAL_HOME/.config/dwlb/config" <<EOF
 -font monospace:size=$DWLB_FONT_SIZE
 -vertical-padding -2
 -horizontal-padding 6
@@ -193,6 +229,8 @@ cat > "$HOME/.config/dwlb/config" <<EOF
 -urgent-fg-color 1e1e2e
 -urgent-bg-color f38ba8
 EOF
+sudo chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.config" 2>/dev/null
+ok "Tema dwlb escrito en $REAL_HOME/.config/dwlb/config"
 
 # ---------- Estado de la barra ----------
 sudo tee /usr/local/bin/dwlb-status >/dev/null <<'STAT'
@@ -226,10 +264,11 @@ RUN
 sudo chmod +x /usr/local/bin/dwl-status-runner
 
 # ---------- Wallpaper por defecto ----------
-mkdir -p "$HOME/Pictures"
-if [ ! -f "$HOME/Pictures/wallpaper.jpg" ]; then
+sudo -u "$REAL_USER" mkdir -p "$REAL_HOME/Pictures"
+if [ ! -f "$REAL_HOME/Pictures/wallpaper.jpg" ]; then
   info "Descargando wallpaper por defecto..."
-  curl -fsSL --max-time 20 -o "$HOME/Pictures/wallpaper.jpg" https://wallpapercave.com/download/empty-error-wallpapers-wp8330753 || warn "Sin wallpaper: copia uno manual a ~/Pictures/wallpaper.jpg"
+  curl -fsSL --max-time 20 -o "$REAL_HOME/Pictures/wallpaper.jpg" https://wallpapercave.com/download/empty-error-wallpapers-wp8330753 || warn "Sin wallpaper: copia uno manual a ~/Pictures/wallpaper.jpg"
+  sudo chown "$REAL_USER:$REAL_USER" "$REAL_HOME/Pictures/wallpaper.jpg" 2>/dev/null
 fi
 
 # ---------- Script de sesion dwl ----------
@@ -258,6 +297,7 @@ dwl -s /usr/local/bin/dwl-status-runner
 clean
 EOF
 sudo chmod +x /usr/local/bin/dwl-session
+ok "dwl-session creado en /usr/local/bin/dwl-session"
 
 # ---------- Utilidades de recompilacion ----------
 sudo tee /usr/local/bin/dwl-rebuild >/dev/null <<'RB'; sudo chmod +x /usr/local/bin/dwl-rebuild
@@ -269,6 +309,7 @@ sudo tee /usr/local/bin/dwlb-rebuild >/dev/null <<'RB'; sudo chmod +x /usr/local
 set -e; cd "$HOME/dwlb"; git pull --ff-only; make clean; make; sudo make install; echo "dwlb recompilado, reinicia sesion."
 RB
 
+# ---------- Entrada de sesion Wayland ----------
 sudo mkdir -p /usr/share/wayland-sessions
 sudo tee /usr/share/wayland-sessions/dwl.desktop >/dev/null <<DSK
 [Desktop Entry]
@@ -277,50 +318,179 @@ Exec=/usr/local/bin/dwl-session
 Type=Application
 DesktopNames=dwl
 DSK
+ok "Sesion Wayland registrada: /usr/share/wayland-sessions/dwl.desktop"
 
-# ---------- greetd: usuario + config ----------
+
+# =========================================================================
+# =========================================================================
+#   BLOQUE FINAL — INICIO DE SESION (greetd + tuigreet)
+#   Debe quedar SIEMPRE al final del script: se ejecuta cuando dwl,
+#   dwlb, dwl-session y dwl.desktop ya existen. Si se movia antes,
+#   tuigreet arrancaba contra una sesion inexistente y greetd caia.
+# =========================================================================
+# =========================================================================
 echo
-info "Configurando greetd/tuigreet..."
+echo "============================================================"
+echo " BLOQUE FINAL v$VERSION — greetd / tuigreet (inicio de sesion)"
+echo "============================================================"
+
+# --- 0) Comprobaciones previas: la sesion tiene que existir YA ---
+for f in /usr/local/bin/dwl-session /usr/local/bin/dwl-status-runner /usr/share/wayland-sessions/dwl.desktop; do
+  if [ ! -f "$f" ]; then
+    err "Falta $f — el bloque de inicio de sesion no puede continuar."
+  fi
+done
+[ -x /usr/local/bin/dwl-session ] || sudo chmod +x /usr/local/bin/dwl-session
+ok "Sesion dwl verificada antes de tocar greetd"
+
+# --- 1) Binarios del greeter con ruta absoluta (FIX 6) ---
+GREETD_BIN=""
+for b in /usr/bin/greetd /usr/local/bin/greetd /usr/sbin/greetd; do
+  [ -x "$b" ] && GREETD_BIN="$b" && break
+done
+[ -z "$GREETD_BIN" ] && GREETD_BIN="$(command -v greetd 2>/dev/null)"
+[ -z "$GREETD_BIN" ] && err "No se encuentra el binario greetd. Instala el paquete greetd."
+info "Binario greetd: $GREETD_BIN"
+
+TUIGREET_BIN=""
+for b in /usr/bin/tuigreet /usr/local/bin/tuigreet /usr/bin/agreety; do
+  [ -x "$b" ] && TUIGREET_BIN="$b" && break
+done
+[ -z "$TUIGREET_BIN" ] && TUIGREET_BIN="$(command -v tuigreet 2>/dev/null)"
+if [ -n "$TUIGREET_BIN" ]; then
+  ok "Greeter: $TUIGREET_BIN"
+else
+  warn "No se localiza tuigreet; se usara 'tuigreet' a secas (puede fallar con el PATH de runit)"
+  TUIGREET_BIN="tuigreet"
+fi
+
+# --- 2) Usuario del greeter ---
+info "Configurando usuario greeter '$GREETER_USER'..."
 id -u "$GREETER_USER" >/dev/null 2>&1 || sudo useradd -r -s /sbin/nologin -d /var/lib/greetd "$GREETER_USER"
 sudo usermod -aG tty,video,input "$GREETER_USER"
 sudo mkdir -p /var/lib/greetd /etc/greetd
 sudo chown "$GREETER_USER:$GREETER_USER" /var/lib/greetd 2>/dev/null
 sudo chmod 700 /var/lib/greetd
 
-# ---------- FIX 5: botones de power solo con loginctl ----------
+# --- 3) FIX 5: botones de power solo si hay loginctl ---
 if command -v loginctl >/dev/null 2>&1; then
   POWER_FLAGS="--power-shutdown 'loginctl poweroff' --power-reboot 'loginctl reboot'"
+  ok "loginctl presente: tuigreet con botones de apagar/reiniciar"
 else
   POWER_FLAGS=""
-  info "Sin loginctl (Void sin elogind): tuigreet va sin botones de power"
+  warn "Sin loginctl (Void sin elogind): tuigreet va sin botones de power"
 fi
+
+# --- 4) /etc/greetd/config.toml ---
 sudo tee /etc/greetd/config.toml >/dev/null <<TOML
 [terminal]
 vt = 1
 
 [default_session]
-command = "tuigreet --cmd /usr/local/bin/dwl-session --time --remember --asterisks $POWER_FLAGS"
+command = "$TUIGREET_BIN --cmd /usr/local/bin/dwl-session --time --remember --asterisks $POWER_FLAGS"
 user = "$GREETER_USER"
 TOML
+sudo chmod 644 /etc/greetd/config.toml
+ok "/etc/greetd/config.toml escrito"
+echo "-------------------------------------------"
+sudo cat /etc/greetd/config.toml
+echo "-------------------------------------------"
 
 if [ "$FAMILIA" = "void" ]; then
-  # ---------- FIX 1: greetd como ROOT (runit) ----------
-  sudo mkdir -p /etc/sv/greetd
-  sudo tee /etc/sv/greetd/run >/dev/null <<'RUN'
-#!/bin/sh
-# greetd DEBE correr como root: gestiona VTs, PAM y las sesiones.
-# v1.0 lo lanzaba con 'chpst -u greetd:greetd' -> moria al instante.
-sleep 2
-exec greetd -c /etc/greetd/config.toml 2>&1
-RUN
-  sudo chmod +x /etc/sv/greetd/run
 
-  # turnstile en PAM (requiere turnstiled habilitado, FIX 4)
+  # --- 5a) FIX 10: pam_turnstile solo si el modulo existe ---
   if [ -f /etc/pam.d/greetd ] && ! grep -q pam_turnstile.so /etc/pam.d/greetd; then
-    printf '\nsession optional pam_turnstile.so\n' | sudo tee -a /etc/pam.d/greetd >/dev/null
+    if ls /usr/lib/security/pam_turnstile.so /usr/lib64/security/pam_turnstile.so >/dev/null 2>&1 \
+       && [ -L /var/service/turnstiled ]; then
+      printf '\nsession optional pam_turnstile.so\n' | sudo tee -a /etc/pam.d/greetd >/dev/null
+      ok "pam_turnstile anadido a /etc/pam.d/greetd"
+    else
+      warn "pam_turnstile omitido (modulo o turnstiled ausente) para no romper el login"
+    fi
   fi
+
+  # --- 6a) FIX 6: servicio runit con ruta ABSOLUTA y sin 'down' ---
+  sudo mkdir -p /etc/sv/greetd
+  sudo rm -f /etc/sv/greetd/down /var/service/greetd/down
+  sudo tee /etc/sv/greetd/run >/dev/null <<RUN
+#!/bin/sh
+# greetd DEBE correr como ROOT: gestiona VTs, PAM y abre las sesiones.
+# v1.0 lo lanzaba con 'chpst -u greetd:greetd' -> moria al instante.
+# Se usa ruta ABSOLUTA porque runit NO hereda el PATH de tu usuario:
+# con 'exec greetd' a secas el servicio se quedaba down para siempre.
+sleep 2
+exec $GREETD_BIN -c /etc/greetd/config.toml 2>&1
+RUN
+  sudo chmod 755 /etc/sv/greetd/run
+
+  # --- 7a) FIX 7: servicio de log para poder diagnosticar ---
+  if command -v svlogd >/dev/null 2>&1; then
+    sudo mkdir -p /etc/sv/greetd/log /var/log/greetd
+    sudo tee /etc/sv/greetd/log/run >/dev/null <<'LOG'
+#!/bin/sh
+mkdir -p /var/log/greetd
+exec svlogd -tt /var/log/greetd
+LOG
+    sudo chmod 755 /etc/sv/greetd/log/run
+    ok "Log de greetd en /var/log/greetd/current"
+  else
+    warn "svlogd no disponible: sin log de greetd (instala 'runit'/'socklog' para tenerlo)"
+  fi
+
+  # --- 8a) FIX 8: habilitar y esperar a que runsvdir lo recoja ---
+  sudo sv force-stop agetty-tty1 2>/dev/null
+  sudo rm -f /var/service/agetty-tty1
+  sudo ln -sfn /etc/sv/greetd /var/service/
+
+  if [ ! -L /var/service/greetd ]; then
+    err "No se pudo crear /var/service/greetd"
+  fi
+  ok "greetd enlazado en /var/service"
+
+  # runsvdir tarda hasta 5 s en crear supervise/
+  i=0
+  while [ "$i" -lt 40 ]; do
+    [ -d /var/service/greetd/supervise ] && break
+    i=$((i+1)); sleep 0.5
+  done
+  if [ -d /var/service/greetd/supervise ]; then
+    if pgrep -x greetd >/dev/null 2>&1; then
+      # Ya habia un greetd vivo (instalacion anterior): se reinicia para
+      # que relea /etc/greetd/config.toml y no queden dos peleando por tty1.
+      info "greetd ya estaba en marcha: reiniciando para releer la config..."
+      sudo sv restart greetd >/dev/null 2>&1 || sudo sv start greetd >/dev/null 2>&1 || true
+    else
+      sudo sv start greetd >/dev/null 2>&1 || true
+    fi
+  else
+    warn "runsvdir no ha recogido el servicio todavia (puede que no estes bajo runit)"
+  fi
+
+  # verificacion: el proceso tiene que estar vivo
+  i=0; GREETD_UP=0
+  while [ "$i" -lt 40 ]; do
+    if pgrep -x greetd >/dev/null 2>&1; then GREETD_UP=1; break; fi
+    i=$((i+1)); sleep 0.5
+  done
+
+  echo
+  info "Estado del servicio:"
+  sudo sv status greetd 2>/dev/null || warn "sv no pudo consultar el estado"
+
+  if [ "$GREETD_UP" -eq 1 ]; then
+    ok "greetd esta CORRIENDO (PID: $(pgrep -x greetd | tr '\n' ' '))"
+    info "Si estas en tty1 puede aparecer tuigreet ahora mismo. Es normal."
+  else
+    FINAL_ERROR=1
+    warn "greetd NO arranco. Diagnostico:"
+    [ -f /var/log/greetd/current ] && { echo "  --- /var/log/greetd/current ---"; sudo tail -n 20 /var/log/greetd/current; echo "  --------------------------------"; }
+    echo "  Prueba manual:  sudo sv down greetd; sudo $GREETD_BIN -c /etc/greetd/config.toml"
+    echo "  Revisa tambien: dbus/seatd arriba, tty1 libre (rm /var/service/agetty-tty1)"
+  fi
+
 else
-  # ---------- systemd (Arch) ----------
+
+  # --- 6b) systemd (Arch) ---
   sudo mkdir -p /etc/systemd/system/greetd.service.d
   sudo tee /etc/systemd/system/greetd.service.d/10-wait-ready.conf >/dev/null <<INI
 [Unit]
@@ -328,42 +498,28 @@ After=systemd-logind.service systemd-user-sessions.service systemd-udev-settle.s
 Wants=systemd-logind.service
 Conflicts=getty@tty1.service
 INI
-  sudo ln -sf /usr/lib/systemd/system/greetd.service /etc/systemd/system/autovt@tty1.service 2>/dev/null
-fi
+  sudo systemctl mask getty@tty1 2>/dev/null
+  sudo systemctl enable greetd.service 2>/dev/null
+  sudo systemctl enable --now greetd.service 2>/dev/null
+  sudo systemctl set-default graphical.target 2>/dev/null
+  sudo systemctl restart greetd.service 2>/dev/null
 
-# ==============================================================
-# PASO FINAL - HABILITACION DE GREETD
-# ==============================================================
-FINAL_ERROR=0
-echo
-echo "============================================================"
-echo " FINALIZANDO INSTALACION v1.1"
-echo "============================================================"
-echo
-info "Habilitando greetd/tuigreet..."
-if [ "$FAMILIA" = "void" ]; then
-  # ---------- FIX 2: NADA de archivo 'down' ni 'sv stop' ----------
-  # v1.0 hacia:  touch /etc/sv/greetd/down -> runit NUNCA lo arrancaba
-  #              sv stop greetd            -> y encima lo paraba a mano
-  sudo rm -f /etc/sv/greetd/down
-  sudo sv force-stop agetty-tty1 2>/dev/null
-  sudo rm -f /var/service/agetty-tty1
-  sudo ln -sfn /etc/sv/greetd /var/service/
-  if [ -L /var/service/greetd ]; then
-    ok "greetd habilitado en /var/service"
-    ls -l /var/service/greetd
-    info "Nota: si ejecutas esto desde tty1, tuigreet puede aparecer al instante. Es normal."
+  sleep 2
+  echo
+  info "Estado del servicio:"
+  sudo systemctl status greetd.service --no-pager -l 2>/dev/null | head -n 12
+
+  if systemctl is-active --quiet greetd.service; then
+    ok "greetd esta activo (systemd)"
   else
-    warn "No se pudo crear /var/service/greetd"
     FINAL_ERROR=1
+    warn "greetd no esta activo. Mira: journalctl -u greetd -b"
   fi
-else
-  sudo systemctl mask getty@tty1
-  sudo systemctl enable greetd
-  ok "greetd habilitado (Arch/systemd)"
 fi
 
+# --- 9) Resumen final ---
 echo
+echo "============================================================"
 echo " UNICO PASO RESTANTE:"
 echo
 echo "    sudo reboot"
@@ -371,9 +527,17 @@ echo
 echo " Tras reiniciar veras tuigreet directamente en tty1."
 echo " Inicia sesion con tu usuario y entras a dwl."
 echo
+echo " Si NO aparece tuigreet tras el reboot:"
+echo "   Void:  sudo sv status greetd"
+echo "          sudo tail -n 30 /var/log/greetd/current"
+echo "          sudo sv restart greetd"
+echo "   Arch:  systemctl status greetd"
+echo "          journalctl -u greetd -b"
+echo
 echo " Atajos:  Super+Enter terminal    Super+d menu"
 echo "          Super+q cerrar          Super+w barra on/off"
 echo "          Super+Shift+e salir de sesion"
-echo
-[ "$FINAL_ERROR" -eq 1 ] && err "Revisa los errores de arriba antes de reiniciar."
-ok "Instalacion v1.1 completada. Nos vemos tras el reboot."
+echo "============================================================"
+[ "${FINAL_ERROR:-0}" -eq 1 ] && err "Revisa los errores de arriba antes de reiniciar."
+ok "Instalacion v$VERSION completada. Nos vemos tras el reboot."
+exit 0
