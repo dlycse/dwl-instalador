@@ -220,7 +220,7 @@ DesktopNames=dwl
 DSK
 
 # Configuracion greetd
-info "Escribiendo configuracion de greetd (NO se habilita automaticamente)..."
+info "Escribiendo configuracion de greetd..."
 id -u "$GREETER_USER" >/dev/null 2>&1 || sudo useradd -r -s /sbin/nologin -d /var/lib/greetd "$GREETER_USER"
 sudo usermod -aG tty,video,input "$GREETER_USER"
 sudo mkdir -p /var/lib/greetd /etc/greetd
@@ -264,40 +264,32 @@ sudo chown greetd:greetd /var/lib/greetd 2>/dev/null
 sudo chmod 700 /var/lib/greetd
 
 # ==============================================================
-# PANTALLA FINAL - HABILITACION SEGURA DE GREETD
+# PANTALLA FINAL - HABILITACION AUTOMATICA DE GREETD
+# 100% SEGURO: es el ULTIMO paso, ya TODO esta instalado
 # ==============================================================
 echo
 echo "============================================================"
-echo " ✅ INSTALACION v1.0 COMPLETADA - SIN ERRORES NI CUELGUES"
-echo "============================================================"
+echo " ✅ INSTALACION v1.0 COMPLETADA"
+echo " ============================================================"
 echo
-if confirm "Habilitar greetd/tuigreet AHORA como ultimo paso (100% seguro, ya todo esta instalado)?"; then
- info "Habilitando greetd..."
- if [ "$FAMILIA" = "void" ]; then
-  sudo rm -f /var/service/agetty-tty1 2>/dev/null
-  sudo ln -sf /etc/sv/greetd /var/service/
-  ok "greetd habilitado en Void"
- else
-  sudo systemctl mask getty@tty1
-  sudo systemctl enable greetd
-  ok "greetd habilitado en Arch"
- fi
- ok "✅ Listo! El gestor de login se activara en el proximo arranque."
+info "Habilitando greetd/tuigreet automaticamente (ultimo paso)..."
+if [ "$FAMILIA" = "void" ]; then
+ # Void: quitar agetty tty1 y habilitar greetd
+ sudo sv stop agetty-tty1 2>/dev/null
+ sudo rm -f /var/service/agetty-tty1
+ sudo rm -f /var/service/greetd
+ sudo ln -sf /etc/sv/greetd /var/service/
+ ok "✅ greetd habilitado para Void en /var/service"
 else
- echo
- echo " ⚠️  Cuando quieras habilitar greetd manualmente, ejecuta:"
- if [ "$FAMILIA" = "void" ]; then
-  echo "   sudo rm -f /var/service/agetty-tty1"
-  echo "   sudo ln -sf /etc/sv/greetd /var/service/"
- else
-  echo "   sudo systemctl mask getty@tty1"
-  echo "   sudo systemctl enable greetd"
- fi
+ # Arch systemd
+ sudo systemctl mask getty@tty1
+ sudo systemctl enable greetd
+ ok "✅ greetd habilitado para Arch"
 fi
 echo
-echo " 📌 Ahora ejecuta: sudo reboot"
+echo " 📌 UNICO COMANDO QUE TIENES QUE EJECUTAR AHORA:  sudo reboot"
 echo
-echo " Al reiniciar veras tuigreet directamente en tty1 sin tener que cambiar de consola."
+echo " 🎉 Despues del reinicio veras tuigreet DIRECTAMENTE en tty1, sin login de texto previo."
 echo " Atajos principales:"
 echo "  🪟 Super + Enter   → Terminal foot"
 echo "  🚀 Super + d       → Lanzador wmenu"
