@@ -226,7 +226,7 @@ else
   sudo pacman -Sy --noconfirm archlinux-keyring 2>/dev/null || true
 
   # Lista SIN wlroots: el nombre cambia cada serie (0.18 -> 0.19 -> 0.20...)
-  ARCH_PKGS="base-devel git libinput wayland wayland-protocols libxkbcommon seatd xorg-xwayland mesa libdrm pango cairo pixman fcft tllist foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulse swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano ttf-nerd-fonts-symbols ttf-nerd-fonts-symbols-mono lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd greetd-tuigreet"
+  ARCH_PKGS="base-devel git libinput wayland wayland-protocols libxkbcommon seatd xorg-xwayland mesa libdrm pango cairo pixman fcft tllist foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulse swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano ttf-jetbrains-mono-nerd ttf-nerd-fonts-symbols ttf-nerd-fonts-symbols-mono lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd greetd-tuigreet"
 
   # --- FIX 13: wlroots se detecta en los repos (nunca a mano) ---
   WLR_PKG=""
@@ -385,10 +385,53 @@ else
   warn "pkg-config no encuentra wlroots: dwl casi seguro fallara al compilar"
 fi
 
+# --- Parche IPC de dwl (pastilla del tag activo y [] = en la barra) ---
+# dwl upstream no tiene IPC: sin el parche dwlb no sabe que tags estan
+# activos. Si el parche no aplica o no compila, se sigue sin el (la barra
+# arranca con -no-ipc y no marca el tag activo). No detiene la instalacion.
+IPC_OK=0
+git checkout -q -- Makefile dwl.c config.def.h 2>/dev/null
+rm -f protocols/dwl-ipc-unstable-v2.xml dwl.c.rej dwl.c.orig
+if curl -fsSL https://codeberg.org/dwl/dwl-patches/raw/branch/main/patches/ipc/ipc.patch -o /tmp/dwl-ipc.patch 2>/dev/null; then
+  patch -p1 -N --no-backup-if-mismatch < /tmp/dwl-ipc.patch >/tmp/dwl-ipc.log 2>&1
+  # Un bloque (prototipos dwl_ipc_*) no encaja en dwl main: se inserta a mano
+  if [ -f dwl.c.rej ]; then
+    awk '/^\+static .*dwl_ipc/ { sub(/^\+/, ""); print }' dwl.c.rej > /tmp/dwl-ipc-protos.txt
+    if [ -s /tmp/dwl-ipc-protos.txt ] && grep -q '^static Monitor \*dirtomon(enum wlr_direction dir);$' dwl.c; then
+      sed -i '/^static Monitor \*dirtomon(enum wlr_direction dir);$/r /tmp/dwl-ipc-protos.txt' dwl.c
+      rm -f dwl.c.rej
+    fi
+  fi
+  if [ ! -f dwl.c.rej ] && grep -q 'dwl_ipc_manager_bind' dwl.c && [ -f protocols/dwl-ipc-unstable-v2.xml ]; then
+    IPC_OK=1
+  else
+    git checkout -q -- Makefile dwl.c config.def.h 2>/dev/null
+    rm -f protocols/dwl-ipc-unstable-v2.xml dwl.c.rej dwl.c.orig
+    warn "Parche IPC de dwl no aplicado: la barra no marcara el tag activo"
+  fi
+else
+  warn "No pude bajar el parche IPC (sin red?): la barra no marcara el tag activo"
+fi
+
 make clean 2>/dev/null
-make || err "Error compilando dwl. Mira el error de arriba (suele ser wlroots)."
+if ! make; then
+  if [ "$IPC_OK" = 1 ]; then
+    warn "dwl con parche IPC no compilo: reintento sin el parche"
+    IPC_OK=0
+    git checkout -q -- Makefile dwl.c config.def.h 2>/dev/null
+    rm -f protocols/dwl-ipc-unstable-v2.xml
+    make clean 2>/dev/null
+  fi
+  make || err "Error compilando dwl. Mira el error de arriba (suele ser wlroots)."
+fi
 sudo make install
-ok "dwl compilado e instalado"
+if [ "$IPC_OK" = 1 ]; then
+  sudo mkdir -p /usr/local/share/dwl && sudo touch /usr/local/share/dwl/ipc
+  ok "dwl compilado e instalado (con parche IPC: pastilla del tag activo)"
+else
+  sudo rm -f /usr/local/share/dwl/ipc
+  ok "dwl compilado e instalado (sin parche IPC)"
+fi
 
 hdr "COMPILAR DWLB"
 # ---------- Compilar dwlb ----------
@@ -409,46 +452,92 @@ make
 sudo make install
 ok "dwlb instalado (el aviso fcft_set_scaling_filter es normal)"
 
-hdr "TEMA DE LA BARRA"
+hdr "TEMA DE LA BARRA Y TERMINAL"
 # ---------- Tema dwlb ----------
+# dwlb NO lee un archivo de config por si mismo: sus opciones van por linea
+# de comandos. /usr/local/bin/dwl-status-runner lee este archivo (una opcion
+# por linea, '#' = comentario) y se las pasa a dwlb al arrancar.
 sudo -u "$REAL_USER" mkdir -p "$REAL_HOME/.config/dwlb"
 cat > "$REAL_HOME/.config/dwlb/config" <<EOF
--font monospace:size=$DWLB_FONT_SIZE
--vertical-padding -2
--horizontal-padding 6
--hide-vacant-tags
--center-title
--status-commands
+# Tema de la barra (dwlb). Colores RRGGBB o RRGGBBAA (AA = opacidad, bf = 75%).
+-font "JetBrainsMono Nerd Font:size=$DWLB_FONT_SIZE"
+-vertical-padding 6
 -no-bottom
--active-fg-color ffffff
--active-bg-color 89b4fa
--occupied-fg-color cdd6f4
--occupied-bg-color 313244
--inactive-fg-color a6adc8
--inactive-bg-color 1e1e2e
--urgent-fg-color 1e1e2e
--urgent-bg-color f38ba8
+-tags 9         
+-active-fg-color 1a1b26
+-active-bg-color 7dcfff
+-occupied-fg-color c0caf5
+-occupied-bg-color 3b4261bf
+-inactive-fg-color 7f849c
+-inactive-bg-color 1a1b26bf
+-urgent-fg-color 1a1b26
+-urgent-bg-color f7768e
+-middle-bg-color 1a1b26bf
+-middle-bg-color-selected 1a1b26bf
+-status-commands
 EOF
 sudo chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.config" 2>/dev/null
 ok "Tema dwlb escrito en $REAL_HOME/.config/dwlb/config"
 
+# ---------- Terminal foot transparente (como el st de la captura) ----------
+sudo -u "$REAL_USER" mkdir -p "$REAL_HOME/.config/foot"
+FOOT_INI="$REAL_HOME/.config/foot/foot.ini"
+[ -f "$FOOT_INI" ] && [ ! -f "$FOOT_INI.bak" ] && cp "$FOOT_INI" "$FOOT_INI.bak"
+cat > "$FOOT_INI" <<EOF
+[main]
+font=JetBrainsMono Nerd Font:size=$DWLB_FONT_SIZE
+
+[colors-dark]
+background=1a1b26
+foreground=c0caf5
+regular0=15161e
+regular1=f7768e
+regular2=9ece6a
+regular3=e0af68
+regular4=7aa2f7
+regular5=bb9af7
+regular6=7dcfff
+regular7=a9b1d6
+bright0=414868
+bright1=f7768e
+bright2=9ece6a
+bright3=e0af68
+bright4=7aa2f7
+bright5=bb9af7
+bright6=7dcfff
+bright7=c0caf5
+# Transparencia del fondo: 0 = invisible, 1 = opaco
+alpha=0.75
+alpha-mode=default
+EOF
+sudo chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.config" 2>/dev/null
+ok "Terminal foot con fondo transparente (alpha 0.75): $FOOT_INI"
+
 # ---------- Estado de la barra ----------
+# Bloques entre corchetes, como en la barra de dwm. ^fg(HEX) = color (sintaxis dwlb).
 sudo tee /usr/local/bin/dwlb-status >/dev/null <<'STAT'
 #!/bin/sh
-# Imprime UNA linea de estado y termina.
-# Lo llama cada 5 s el runner (/usr/local/bin/dwl-status-runner).
+# Imprime UNA linea de estado y termina. La llama cada 5 s el runner.
+C=7dcfff   # cian: corchetes
+G=9ece6a   # verde: etiquetas
+W=c0caf5   # blanco: valores
+blk(){ printf '^fg(%s)[^fg(%s)%s ^fg(%s)%s^fg(%s)] ' "$C" "$G" "$1" "$W" "$2" "$C"; }
 V=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null | awk '{printf "%d", $2*100}')
 BAT=""
 for B in /sys/class/power_supply/BAT*; do
   [ -r "$B/capacity" ] || continue
   CAP=$(cat "$B/capacity" 2>/dev/null)
   ST=$(cat "$B/status" 2>/dev/null | cut -c1)
-  [ -n "$CAP" ] && BAT="  ^fg(89b4fa)BAT^fg(cdd6f4) ${CAP}%${ST}" && break
+  [ -n "$CAP" ] && BAT="$CAP%$ST" && break
 done
 CPU=$(cut -d' ' -f1 /proc/loadavg)
 RAM=$(awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{printf "%.1fG",(t-a)/1048576}' /proc/meminfo)
 D=$(date '+%H:%M %d/%m')
-printf '^fg(89b4fa)CPU^fg(cdd6f4) %s  ^fg(89b4fa)RAM^fg(cdd6f4) %s%s  ^fg(89b4fa)VOL^fg(cdd6f4) %s%%  ^fg(cdd6f4)%s\n' "$CPU" "$RAM" "$BAT" "$V" "$D"
+blk CPU "$CPU"
+blk RAM "$RAM"
+[ -n "$BAT" ] && blk BAT "$BAT"
+blk VOL "${V:-0}%"
+printf '^fg(%s)%s\n' "$W" "$D"
 STAT
 sudo chmod +x /usr/local/bin/dwlb-status
 
@@ -457,28 +546,43 @@ hdr "BARRA Y FONDO"
 sudo tee /usr/local/bin/dwl-status-runner >/dev/null <<'RUN'
 #!/bin/sh
 # Fondo (swaybg) + barra (dwlb) + estado.
+# La barra lee ~/.config/dwlb/config (una opcion por linea; '#' = comentario).
+# Con el parche IPC de dwl (/usr/local/share/dwl/ipc) usa -ipc, que marca el
+# tag activo; si no, -no-ipc.
 # Vigilante: si la barra se cierra (Super+W la oculta) la sesion NO se
 # cae: el bucle la relanza en cuanto toque. dwl mata este grupo al salir.
-exec 3<&0
 SB=""; PB=""
 HIDDEN="$HOME/.cache/dwlb-hidden"
+CONF="$HOME/.config/dwlb/config"
 clean(){ [ -n "$PB" ] && kill "$PB" 2>/dev/null; [ -n "$SB" ] && kill "$SB" 2>/dev/null; wait 2>/dev/null; }
 trap clean EXIT
 mkdir -p "$HOME/Pictures" "$HOME/.cache"
 if [ -f "$HOME/Pictures/wallpaper.jpg" ] && command -v swaybg >/dev/null; then
   swaybg -i "$HOME/Pictures/wallpaper.jpg" -m fill < /dev/null >/dev/null 2>&1 & SB=$!
 fi
+# Opciones de dwlb: cada linea del archivo son argumentos
+set --
+if [ -f "$CONF" ]; then
+  while IFS= read -r L || [ -n "$L" ]; do
+    case $L in ''|\#*) continue ;; esac
+    eval "set -- \"\$@\" $L"
+  done < "$CONF"
+fi
+if [ -f /usr/local/share/dwl/ipc ]; then set -- -ipc "$@"; else set -- -no-ipc "$@"; fi
+# Sin -ipc, dwlb lee stdin y SALE si llega a EOF: se mantiene abierto un FIFO
+FIFO="$HOME/.cache/dwlb-stdin.$$"
+mkfifo "$FIFO" && exec 3<>"$FIFO" && rm -f "$FIFO"
 while :; do
   # 1) barra: arriba salvo que este oculta con Super+W
   if [ -f "$HIDDEN" ]; then
     if [ -n "$PB" ]; then kill "$PB" 2>/dev/null; PB=""; fi
   elif [ -z "$PB" ] || ! kill -0 "$PB" 2>/dev/null; then
-    dwlb -no-ipc <&3 & PB=$!
+    dwlb "$@" <&3 & PB=$!
     sleep 1
   fi
-  # 2) una linea de estado cada 5 s (si no hay barra, reintenta sin ruido)
+  # 2) una linea de estado cada 5 s (dwlb -status la envia a la barra en marcha)
   if [ -n "$PB" ]; then
-    dwlb-status | dwlb -status-stdin all 2>/dev/null
+    dwlb -status all "$(dwlb-status)" 2>/dev/null
   fi
   sleep 5
 done
@@ -571,7 +675,8 @@ cat > "$REAL_HOME/Atajos.txt" <<'ATAJ'
 ------------------------------------------------
  ARCHIVOS Y COMANDOS
    ~/dwl/config.h                 Atajos y colores -> luego: dwl-rebuild
-   ~/.config/dwlb/config          Fuente y colores de la barra
+   ~/.config/dwlb/config          Fuente, colores y tags de la barra
+   ~/.config/foot/foot.ini        Terminal con fondo transparente
    /usr/local/bin/dwlb-status     Bloques de estado (CPU, RAM, BAT, VOL)
    /usr/local/bin/dwl-session     Lo que arranca con la sesion
    ~/Pictures/wallpaper.jpg       Tu fondo de pantalla
