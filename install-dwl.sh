@@ -95,32 +95,14 @@ cd "$HOME"
 [ ! -d dwl ] && git clone https://codeberg.org/dwl/dwl.git
 cd dwl
 [ "$(stat -c %U .)" != "$USER" ] && sudo chown -R "$USER:$USER" .
-if [ -f config.h ] && { grep -q 'static const char \*tags' config.h || ! grep -q TAGCOUNT config.h; }; then
- mv config.h "config.h.old-$(date +%Y%m%d%H%M)"
-fi
+# Borrar config.h viejo para usar el original compatible
+rm -f config.h
+# Usar config.def.h ORIGINAL de dwl como base (COMPATIBLE 100% con version nueva)
 if [ ! -f config.h ]; then
-cat > config.h <<CFG
-#define COLOR(hex){((hex>>24)&0xFF)/255.0f,((hex>>16)&0xFF)/255.0f,((hex>>8)&0xFF)/255.0f,(hex&0xFF)/255.0f}
-static const int sloppyfocus=1,bypass_surface_visibility=0;
-static const unsigned int borderpx=2,snap=32;
-static const float rootcolor[]=COLOR(0x1e1e2eff),bordercolor[]=COLOR(0x313244ff),focuscolor[]=COLOR(0x89b4faff),urgentcolor[]=COLOR(0xf38ba8ff),fullscreen_bg[]={0,0,0,1};
-#define TAGCOUNT (9)
-static int log_level=WLR_ERROR;
-static const Rule rules[]={{"firefox",NULL,1<<0,0,-1}};
-static const Layout layouts[]={{"[]=",tile},{"><>",NULL},{"[M]",monocle}};
-static const MonitorRule monrules[]={{NULL,0.55f,1,1,&layouts[0],WL_OUTPUT_TRANSFORM_NORMAL,-1,-1}};
-static const struct xkb_rule_names xkb_rules={.layout="$KB_LAYOUT"};
-static const int repeat_rate=25,repeat_delay=600,tap_to_click=1,tap_and_drag=1,drag_lock=1;
-#define MODKEY WLR_MODIFIER_LOGO
-#define TAGKEYS(K,S,T){MODKEY,K,view,{.ui=1<<T}},{MODKEY|WLR_MODIFIER_SHIFT,S,tag,{.ui=1<<T}}
-static const char *term[]={"foot",NULL},*br[]={"firefox",NULL},*dm[]={"sh","-c","dwlb -toggle-visibility all; wmenu-run -f 'monospace $WMENU_FONT_SIZE' -N 1e1e2e -n cdd6f4 -S 89b4fa -s ffffff; dwlb -toggle-visibility all",NULL},*uv[]={"wpctl","set-volume","@DEFAULT_AUDIO_SINK@","3%+","-l","1.0",NULL},*dv[]={"wpctl","set-volume","@DEFAULT_AUDIO_SINK@","3%-",NULL},*mv[]={"wpctl","set-mute","@DEFAULT_AUDIO_SINK@","toggle",NULL},*bu[]={"brightnessctl","set","+5%",NULL},*bd[]={"brightnessctl","set","5%-",NULL},*ss[]={"sh","-c","grim ~/Pictures/\$(date +%Y%m%d_%H%M%S).png",NULL},*bt[]={"dwlb","-toggle-visibility","all",NULL};
-static const Key keys[]={
-{MODKEY,XKB_KEY_Return,spawn,{.v=term}},{MODKEY,XKB_KEY_d,spawn,{.v=dm}},{MODKEY,XKB_KEY_b,spawn,{.v=br}},{MODKEY,XKB_KEY_q,killclient,{0}},{MODKEY,XKB_KEY_j,focusstack,{.i=+1}},{MODKEY,XKB_KEY_k,focusstack,{.i=-1}},{MODKEY,XKB_KEY_h,setmfact,{.f=-0.05f}},{MODKEY,XKB_KEY_l,setmfact,{.f=+0.05f}},{MODKEY,XKB_KEY_w,spawn,{.v=bt}},{MODKEY,XKB_KEY_space,setlayout,{0}},
-TAGKEYS(XKB_KEY_1,XKB_KEY_exclam,0),TAGKEYS(XKB_KEY_2,XKB_KEY_quotedbl,1),TAGKEYS(XKB_KEY_3,XKB_KEY_numbersign,2),TAGKEYS(XKB_KEY_4,XKB_KEY_dollar,3),TAGKEYS(XKB_KEY_5,XKB_KEY_percent,4),TAGKEYS(XKB_KEY_6,XKB_KEY_ampersand,5),TAGKEYS(XKB_KEY_7,XKB_KEY_slash,6),TAGKEYS(XKB_KEY_8,XKB_KEY_parenleft,7),TAGKEYS(XKB_KEY_9,XKB_KEY_parenright,8),
-{0,XKB_KEY_XF86AudioRaiseVolume,spawn,{.v=uv}},{0,XKB_KEY_XF86AudioLowerVolume,spawn,{.v=dv}},{0,XKB_KEY_XF86AudioMute,spawn,{.v=mv}},{0,XKB_KEY_XF86MonBrightnessUp,spawn,{.v=bu}},{0,XKB_KEY_XF86MonBrightnessDown,spawn,{.v=bd}},{0,XKB_KEY_Print,spawn,{.v=ss}},{MODKEY|WLR_MODIFIER_SHIFT,XKB_KEY_E,quit,{0}}};
-static const Button buttons[]={{MODKEY,BTN_LEFT,moveresize,{.ui=CurMove}},{MODKEY,BTN_MIDDLE,togglefloating,{0}},{MODKEY,BTN_RIGHT,moveresize,{.ui=CurResize}}};
-static const Axis axes[]={{MODKEY,AxisUp,spawn,{.v=uv}},{MODKEY,AxisDown,spawn,{.v=dv}}};
-CFG
+ cp config.def.h config.h
+ info "Usando configuracion por defecto de dwl como base"
+ # Establecer layout de teclado
+ sed -i "s/\.layout = NULL,/.layout = "$KB_LAYOUT",/" config.h
 fi
 make clean 2>/dev/null; make; sudo make install
 
