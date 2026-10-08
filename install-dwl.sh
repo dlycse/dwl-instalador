@@ -1,5 +1,5 @@
 #!/bin/sh
-# install-dwl v0.9.5
+# install-dwl v0.9.6
 # Instalador de dwl (dwm para Wayland) - FUNCIONA 100% AUTOMATICO.
 #
 # Distros soportadas sin intervencion manual:
@@ -16,7 +16,7 @@
 # NO instala drivers de GPU ni Steam (lo haces tu segun tu grafica).
 #
 # Variables sobreescribibles por entorno:
-#   WMENU_FONT_SIZE=11 DWLB_FONT_SIZE=10 GREETD_VT=1 ./install-dwl-v0.9.5.sh
+#   WMENU_FONT_SIZE=11 DWLB_FONT_SIZE=10 GREETD_VT=1 ./install-dwl-v0.9.6.sh
 
 set -e
 
@@ -27,7 +27,7 @@ warn(){ printf "%b[!]%b %s\n" "$Y" "$N" "$1"; }
 err() { printf "%b[x]%b %s\n" "$R" "$N" "$1"; exit 1; }
 hdr() { printf "%b%s%b\n" "$C" "$1" "$N"; }
 
-VERSION="v0.9.5"
+VERSION="v0.9.6"
 [ "$(id -u)" -eq 0 ] && err "No ejecutes el script como root (los archivos quedarian en /root)."
 command -v sudo >/dev/null || err "Falta sudo: agrega tu usuario a sudoers con visudo."
 command -v git  >/dev/null || err "Falta git: instalalo primero."
@@ -660,9 +660,16 @@ INI
   sudo systemctl stop greetd.service 2>/dev/null || true
   info "greetd habilitado; arrancara automaticamente DESPUES de reiniciar."
 else
-  # En Void agregar espera por seatd al script run de greetd
+  # En Void: asegurarse que el run script espera por seatd de forma segura
   if [ -f /etc/sv/greetd/run ] && ! grep -q "sv status seatd" /etc/sv/greetd/run; then
-    sudo sed -i '2i # Esperar a que seatd este listo\nwhile ! sv status seatd | grep -q "^run: "; do sleep 0.5; done\nsleep 2' /etc/sv/greetd/run
+    sudo tee /etc/sv/greetd/run >/dev/null <<'RUN'
+#!/bin/sh
+# Esperar a que seatd este listo
+while ! sv status seatd 2>/dev/null | grep -q "^run: "; do sleep 0.5; done
+sleep 2
+exec greetd -c /etc/greetd/config.toml
+RUN
+    sudo chmod +x /etc/sv/greetd/run
   fi
   sudo sv stop greetd 2>/dev/null || true
   info "greetd habilitado; arrancara automaticamente DESPUES de reiniciar."
