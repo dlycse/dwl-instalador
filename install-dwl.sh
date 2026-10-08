@@ -1,6 +1,6 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.1 — Wayland con dwl + dwlb (Void + Arch)
+# install-dwl v1.0 — Wayland con dwl + dwlb (Void + Arch)
 # ------------------------------------------------------------
 # CORRECCIONES sobre v1.0 (fallos reportados en Void Linux):
 #  FIX 1  greetd corre como ROOT (nunca con chpst -u greetd).
@@ -332,7 +332,7 @@ INI
 fi
 
 # ==============================================================
-# PASO FINAL - HABILITACION DE GREETD (se ejecuta si o si)
+# PASO FINAL - HABILITACION DE GREETD
 # ==============================================================
 FINAL_ERROR=0
 echo
