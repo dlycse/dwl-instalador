@@ -1,921 +1,311 @@
-#!/bin/sh
-# ============================================================
-# install-dwl v0.9.7 — Wayland con dwl + dwlb (Void + Arch)
-# ------------------------------------------------------------
-set +e
-
-VERSION="0.9.7"
-BUILD="rev.3 (anti wlroots-fantasma + anti tty1-kill)"
-
-TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
-# sudo con red de seguridad: si algo se cuelga (p.ej. pidiendo password),
-# se mata a los 25 s en vez de esperar para siempre.
-srun(){ if [ -n "$TIMEOUT_BIN" ]; then "$TIMEOUT_BIN" 25 sudo "$@"; else sudo "$@"; fi; }
-
-info(){ echo " [+] $1"; }
-warn(){ echo " [!] $1"; }
-ok(){   echo " [OK] $1"; }
-err(){  echo " [x] $1"; exit 1; }
-confirm(){
-  printf " [?] %s [s/N]: " "$1"
-  read -r R
-  case "$R" in s|S|y|Y|si|SI|yes|YES) return 0;; *) return 1;; esac
-}
-
-DWLB_FONT_SIZE=10
-KB_LAYOUT="latam"
-KB_CONSOLE="la-latin1"
-
-echo "=========================================="
-echo " install-dwl v$VERSION $BUILD"
-echo " Inicio de sesion (greetd/tuigreet) al FINAL"
-echo "=========================================="
-
-# ---------- FIX 9: usuario y HOME reales (sudo seguro) ----------
-REAL_USER="${SUDO_USER:-${USER:-$(id -un)}}"
-[ -z "$REAL_USER" ] || [ "$REAL_USER" = "root" ] && REAL_USER="$(id -un 2>/dev/null)"
-REAL_HOME="$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6)"
-[ -z "$REAL_HOME" ] && REAL_HOME="/home/$REAL_USER"
-info "Usuario destino: $REAL_USER   HOME: $REAL_HOME"
-
-# ---------- FIX 12: credencial sudo viva todo el rato ----------
-sudo -v || err "Necesitas privilegios de sudo para continuar."
-( while :; do sudo -v; sleep 60; done ) >/dev/null 2>&1 &
-SUDO_KEEPALIVE=$!
-trap 'kill "$SUDO_KEEPALIVE" 2>/dev/null' EXIT INT TERM
-ok "Credencial sudo cacheada (se renueva sola durante la compilacion)"
-
-# ---------- Deteccion de distro ----------
-FAMILIA="unknown"
-[ -f /etc/os-release ] && . /etc/os-release
-case "${ID:-unknown}" in
-  void) FAMILIA="void" ;;
-  arch|manjaro|endeavouros|garuda|artix|archcraft|cachyos|arcolinux|parabola) FAMILIA="arch" ;;
-  *) case "${ID_LIKE:-}" in *arch*) FAMILIA="arch" ;; *void*) FAMILIA="void" ;; esac ;;
-esac
-[ "$FAMILIA" = "unknown" ] && err "Solo compatible con Void Linux y Arch Linux."
-info "Distro detectada: ${ID:-unknown} (familia: $FAMILIA)"
-
-# ---------- Espacio libre ----------
-FREE_GB="$(df -BG --output=avail / 2>/dev/null | tail -n1 | tr -dc '0-9')"
-if [ -n "$FREE_GB" ] && [ "$FREE_GB" -lt 20 ]; then
-  warn "Solo quedan ${FREE_GB} GB libres en / (se recomiendan 20 GB)."
-  confirm "Continuar igualmente?" || err "Cancelado. Libera espacio y vuelve a intentarlo."
-else
-  ok "Espacio libre: ${FREE_GB:-desconocido} GB"
-fi
-
-# ---------- Teclado ----------
-echo
-echo "Selecciona distribucion de teclado:"
-echo "  1) us    2) es    3) latam"
-printf "Opcion [3]: "; read -r KB; KB="${KB:-3}"
-case "$KB" in
-  1) KB_LAYOUT="us"; KB_CONSOLE="us" ;;
-  2) KB_LAYOUT="es"; KB_CONSOLE="es" ;;
-  *) KB_LAYOUT="latam"; KB_CONSOLE="la-latin1" ;;
-esac
-ok "Teclado seleccionado: $KB_LAYOUT"
-
-# ---------- Zona horaria ----------
-echo
-printf " [?] Pais o zona horaria [America/Bogota]: "; read -r TZIN
-TZIN="${TZIN:-America/Bogota}"
-resolv_tz(){
-  case "$1" in
-    [Cc]olombia)                              echo "America/Bogota" ;;
-    [Mm]exico|[Mm]éxico)                      echo "America/Mexico_City" ;;
-    [Aa]rgentina)                             echo "America/Buenos_Aires" ;;
-    [Ee]spana|[Ee]spaña|[Ss]pain)             echo "Europe/Madrid" ;;
-    [Cc]hile)                                 echo "America/Santiago" ;;
-    [Pp]eru|[Pp]erú)                          echo "America/Lima" ;;
-    [Ee]cuador)                               echo "America/Guayaquil" ;;
-    [Vv]enezuela)                             echo "America/Caracas" ;;
-    [Uu]ruguay)                               echo "America/Montevideo" ;;
-    [Bb]olivia)                               echo "America/La_Paz" ;;
-    [Pp]araguay)                              echo "America/Asuncion" ;;
-    [Gg]uatemala)                             echo "America/Guatemala" ;;
-    [Cc]uba)                                  echo "America/Havana" ;;
-    [Cc]osta[Rr]ica)                          echo "America/Costa_Rica" ;;
-    [Pp]anama|[Pp]anamá)                      echo "America/Panama" ;;
-    [Rr]epublica[Dd]ominicana)                echo "America/Santo_Domingo" ;;
-    [Ee]stados[Uu]nidos|[Uu][Ss][Aa])         echo "America/New_York" ;;
-    *)  # o lo busca tal cual en el arbol zoneinfo
-        if [ -f "/usr/share/zoneinfo/$1" ]; then echo "$1"
-        else find /usr/share/zoneinfo -type f 2>/dev/null | grep -i "/$1\$" | head -n1 | sed 's|.*/zoneinfo/||'; fi ;;
-  esac
-}
-TZONE="$(resolv_tz "$TZIN")"
-if [ -n "$TZONE" ] && [ -f "/usr/share/zoneinfo/$TZONE" ]; then
-  sudo ln -sf "/usr/share/zoneinfo/$TZONE" /etc/localtime
-  if [ "$FAMILIA" = "void" ]; then
-    if grep -q '^TIMEZONE=' /etc/rc.conf 2>/dev/null; then
-      sudo sed -i "s|^TIMEZONE=.*|TIMEZONE=\"$TZONE\"|" /etc/rc.conf
-    else
-      echo "TIMEZONE=\"$TZONE\"" | sudo tee -a /etc/rc.conf >/dev/null
-    fi
-    [ -d /etc/sv/chronyd ] && { sudo ln -sfn /etc/sv/chronyd /var/service/; sudo sv start chronyd >/dev/null 2>&1; }
-  else
-    sudo timedatectl set-timezone "$TZONE" 2>/dev/null || true
-    sudo systemctl enable --now chronyd.service >/dev/null 2>&1 || sudo systemctl enable --now chrony.service >/dev/null 2>&1 || true
-  fi
-  ok "Zona horaria: $TZONE"
-else
-  warn "No encontre la zona '$TZIN'; se deja la que ya tenias"
-fi
-
-if [ "$FAMILIA" = "void" ]; then
-  # ==================== VOID LINUX ====================
-  # --- Repositorios extra: nonfree (NVIDIA/Steam) y multilib (32 bits) ---
-  # OJO: multilib solo existe en x86_64 con glibc. En musl/aarch64/i686
-  # esos paquetes no existen y XBPS fallaria, asi que se comprueba antes.
-  if [ "$(uname -m)" = "x86_64" ] && ldd --version 2>/dev/null | grep -qi glibc; then
-    info "Activando repositorios nonfree y multilib..."
-    sudo xbps-install -Sy void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree \
-      || warn "No se pudieron activar los repos extra (continuo sin ellos)"
-  else
-    info "Sistema sin multilib (musl/aarch64/i686): se instala sin repos extra"
-  fi
-
-  info "Instalando paquetes base para Void Linux..."
-  sudo xbps-install -Sy base-devel git libinput-devel wayland-devel wayland-protocols libxkbcommon-devel wlroots-devel libseat-devel seatd xorg-server-xwayland mesa-dri libdrm-devel pango-devel cairo-devel pixman-devel libgudev-devel fcft-devel tllist foot wmenu fastfetch pipewire wireplumber alsa-pipewire swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd tuigreet turnstile || err "Fallo instalando paquetes."
-  GREETER_USER="greetd"
-  SEAT_GROUP="_seatd"
-
-  # ---------- FIX 3: kernel DINAMICO ----------
-  echo
-  info "--- Actualizacion de kernel ---"
-  info "Kernel actual: $(uname -r)"
-  if confirm "Buscar e instalar el kernel mas reciente de los repos?"; then
-    info "Sincronizando indice de paquetes..."
-    sudo xbps-install -S >/dev/null 2>&1
-    LATEST_KERN="$(xbps-query -Rs linux 2>/dev/null | grep -oE 'linux[0-9]+\.[0-9]+-' | tr -d '-' | sort -Vu | tail -n1)"
-    CURRENT_SERIES="linux$(uname -r | cut -d. -f1,2)"
-    if [ -n "$LATEST_KERN" ] && [ "$LATEST_KERN" != "$CURRENT_SERIES" ]; then
-      info "Disponible: $LATEST_KERN (tienes: $CURRENT_SERIES)"
-      if sudo xbps-install -y "$LATEST_KERN" "${LATEST_KERN}-headers"; then
-        ok "Kernel $LATEST_KERN instalado, se activa al reiniciar"
-      else
-        warn "No se pudo instalar $LATEST_KERN; se mantiene $(uname -r)"
-      fi
-    elif [ -n "$LATEST_KERN" ]; then
-      ok "Ya tienes la serie mas reciente ($CURRENT_SERIES)"
-    else
-      warn "xbps-query no devolvio kernels; se mantiene $(uname -r)"
-    fi
-  fi
-
-  # ---------- FIX 4: servicios base de runit ----------
-  echo
-  info "Habilitando servicios base (dbus, seatd, turnstiled)..."
-  for SVC in dbus seatd turnstiled; do
-    if [ -d "/etc/sv/$SVC" ]; then
-      sudo rm -f "/etc/sv/$SVC/down" "/var/service/$SVC/down"
-      sudo ln -sfn "/etc/sv/$SVC" /var/service/
-      sudo sv start "$SVC" >/dev/null 2>&1
-      ok "Servicio habilitado: $SVC"
-    else
-      warn "No existe /etc/sv/$SVC (revisa que el paquete este instalado)"
-    fi
-  done
-
-  # Keymap de consola
-  if grep -q '^KEYMAP=' /etc/rc.conf 2>/dev/null; then
-    sudo sed -i "s|^.*KEYMAP=.*|KEYMAP=\"$KB_CONSOLE\"|" /etc/rc.conf
-  else
-    echo "KEYMAP=\"$KB_CONSOLE\"" | sudo tee -a /etc/rc.conf >/dev/null
-  fi
-  sudo loadkeys "$KB_CONSOLE" 2>/dev/null || true
-
-else
-  # ==================== ARCH LINUX ====================
-  info "Instalando paquetes para Arch Linux..."
-  sudo pacman -Sy --noconfirm archlinux-keyring 2>/dev/null || true
-
-  # Lista SIN wlroots: el nombre cambia cada serie (0.18 -> 0.19 -> 0.20...)
-  ARCH_PKGS="base-devel git libinput wayland wayland-protocols libxkbcommon seatd xorg-xwayland mesa libdrm pango cairo pixman fcft tllist foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulse swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano ttf-nerd-fonts-symbols ttf-nerd-fonts-symbols-mono lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd greetd-tuigreet"
-
-  # --- FIX 13: wlroots se detecta en los repos (nunca a mano) ---
-  WLR_PKG=""
-  for c in wlroots0.20 wlroots0.19 wlroots0.18 wlroots0.17 wlroots; do
-    if pacman -Si "$c" >/dev/null 2>&1; then WLR_PKG="$c"; break; fi
-  done
-  if [ -n "$WLR_PKG" ]; then
-    ok "wlroots en los repos: $WLR_PKG (detectado, no escrito a mano)"
-    ARCH_PKGS="$ARCH_PKGS $WLR_PKG"
-  else
-    warn "Ningun wlroots en los repos: dwl no podra compilar"
-  fi
-
-  # --- FIX 14: un paquete que ya no existe NO tumba la instalacion ---
-  PKG_OK=""; PKG_NO=""
-  for p in $ARCH_PKGS; do
-    if pacman -Si "$p" >/dev/null 2>&1 || pacman -Q "$p" >/dev/null 2>&1; then
-      PKG_OK="$PKG_OK $p"
-    else
-      PKG_NO="$PKG_NO $p"
-    fi
-  done
-  [ -n "$PKG_NO" ] && warn "No estan en los repos, se omiten:$PKG_NO"
-
-  arch_install(){
-    # 1º intento: todo junto (rapido). Si falla: uno a uno (robusto).
-    # shellcheck disable=SC2086
-    sudo pacman -Sy --needed --noconfirm $PKG_OK ||
-    for p in $PKG_OK; do
-      sudo pacman -S --needed --noconfirm "$p" >/dev/null 2>&1 || warn "No se pudo instalar: $p"
-    done
-  }
-  if ! arch_install; then
-    warn "Reintentando con mirrorlist regenerada..."
-    sudo pacman -Sy --noconfirm reflector 2>/dev/null || true
-    sudo reflector --latest 20 --sort rate --save /etc/pacman.d/mirrorlist 2>/dev/null || true
-    arch_install || true
-  fi
-
-  # --- Los que falten se intentan por AUR si hay helper ---
-  if [ -n "$PKG_NO" ]; then
-    for h in yay paru pikaur aura; do
-      if command -v "$h" >/dev/null 2>&1; then
-        info "Intentando por AUR con $h:$PKG_NO"
-        # shellcheck disable=SC2086
-        sudo -u "$REAL_USER" "$h" -S --needed --noconfirm $PKG_NO >/dev/null 2>&1 \
-          || warn "El AUR fallo para:$PKG_NO"
-        break
-      fi
-    done
-  fi
-  sudo systemctl enable --now seatd.service 2>/dev/null || true
-  sudo systemctl enable --now dbus.service 2>/dev/null || true
-  GREETER_USER="greeter"
-  SEAT_GROUP="seat"
-
-  # Keymap de consola
-  if grep -q '^KEYMAP=' /etc/vconsole.conf 2>/dev/null; then
-    sudo sed -i "s|^KEYMAP=.*|KEYMAP=$KB_CONSOLE|" /etc/vconsole.conf
-  else
-    echo "KEYMAP=$KB_CONSOLE" | sudo tee -a /etc/vconsole.conf >/dev/null
-  fi
-  sudo loadkeys "$KB_CONSOLE" 2>/dev/null || true
-fi
-
-# ---------- Permisos de usuario ----------
-echo
-info "Grupos de hardware para $REAL_USER: $SEAT_GROUP, video, input"
-sudo usermod -aG "$SEAT_GROUP",video,input "$REAL_USER"
-warn "Los grupos se aplican al reiniciar."
-
-# ---------- Compilar dwl ----------
-echo
-info "Compilando dwl..."
-cd "$REAL_HOME" || err "No existe $REAL_HOME"
-[ ! -d dwl ] && sudo -u "$REAL_USER" git clone https://codeberg.org/dwl/dwl.git
-cd dwl || err "No se pudo entrar en $REAL_HOME/dwl"
-[ "$(stat -c %U . 2>/dev/null)" != "$REAL_USER" ] && sudo chown -R "$REAL_USER:$REAL_USER" .
-rm -f config.h
-cp config.def.h config.h
-
-# ---------- Parcheo de config.h (FIX 16 + atajos del README) ----------
-# Se parte SIEMPRE del config.def.h de la version clonada, y cada parche
-# se verifica: si el ancla cambia en una version futura de dwl, avisa en
-# vez de quedarse mudo (que es lo que pasaba con el layout, FIX 16).
-apply_patch(){
-  _d="$1"; _e="$2"
-  _b="$(cksum < config.h)"
-  sed -i "$_e" config.h 2>/dev/null
-  _a="$(cksum < config.h)"
-  if [ "$_b" != "$_a" ]; then ok "  config.h: $_d"; else warn "  config.h: NO aplicado -> $_d"; fi
-}
-
-info "Ajustando config.h de dwl..."
-# 1) MODKEY: dwl trae Alt por defecto; aqui pasa a Super (la tecla Windows)
-apply_patch "MODKEY Alt -> Super (LOGO)" \
-  's/#define MODKEY WLR_MODIFIER_ALT/#define MODKEY WLR_MODIFIER_LOGO/'
-# 2) Layout de teclado (FIX 16: dwl actual no trae '.layout = NULL,')
-if grep -q '\.layout = NULL,' config.h; then
-  apply_patch "layout $KB_LAYOUT" "s/\.layout = NULL,/.layout = \"$KB_LAYOUT\",/"
-elif grep -q '\.options = NULL,' config.h; then
-  apply_patch "layout $KB_LAYOUT" "s/\.options = NULL,/.options = NULL, .layout = \"$KB_LAYOUT\",/"
-else
-  warn "  config.h: no encontre donde poner el layout (se usa XKB_DEFAULT_LAYOUT)"
-fi
-# 3) Lanzador en Super+D (dwl trae Super+P)
-apply_patch "lanzador Super+D" 's/XKB_KEY_p,\(.*\)menucmd/XKB_KEY_d,\1menucmd/'
-# 4) Terminal en Super+Enter (dwl trae Super+Shift+Enter)
-apply_patch "terminal Super+Enter" \
-  's/MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_Return,\(.*\)/MODKEY,                    XKB_KEY_Return,\1/'
-# 5) Cerrar ventana con Super+Q (dwl trae Super+Shift+C)
-apply_patch "cerrar Super+Q" \
-  's/MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_c,\(.*\)killclient/MODKEY,                    XKB_KEY_q,\1killclient/'
-# 6) Super+F = monocle (dwl trae ahi el modo flotante)
-apply_patch "monocle Super+F" 's/XKB_KEY_f,\(.*\)&layouts\[1\]/XKB_KEY_f,\1\&layouts[2]/'
-
-# 7) Atajos extra: se insertan AL PRINCIPIO de keys[] (dwl usa la primera
-#    coincidencia, asi que ganan a los de por defecto).
-KEYS_FILE="$(mktemp 2>/dev/null || echo /tmp/dwl-keys.$$)"
-cat > "$KEYS_FILE" <<KEYS
-	{ MODKEY,                    XKB_KEY_b,           spawn,            SHCMD("firefox &") },
-	{ MODKEY,                    XKB_KEY_r,           spawn,            SHCMD("foot -e lf &") },
-	{ MODKEY,                    XKB_KEY_t,           spawn,            {.v = termcmd} },
-	{ MODKEY,                    XKB_KEY_w,           spawn,            SHCMD("/usr/local/bin/dwlb-toggle") },
-	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_w,           spawn,            SHCMD("/usr/local/bin/dwlb-flip") },
-	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_f,           togglefullscreen, {0} },
-	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_e,           quit,             {0} },
-	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_t,           setlayout,        {.v = &layouts[0]} },
-KEYS
-if grep -q '^static const Key keys\[\] = {' config.h; then
-  sed -i "/^static const Key keys\[\] = {/r $KEYS_FILE" config.h
-  ok "  config.h: atajos extra (Firefox, lf, barra, salir, tiling)"
-else
-  warn "  config.h: no encontre el array keys[] (atajos extra omitidos)"
-fi
-rm -f "$KEYS_FILE"
-
-# 8) Rueda del raton + Super = volumen (los ejes vienen vacios en dwl)
-apply_patch "volumen con Super+rueda" \
-  's|^\([[:space:]]*\){ 0, 0, NULL, {0} },|\1{ MODKEY, AxisUp,   spawn, SHCMD("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+") },\n\1{ MODKEY, AxisDown, spawn, SHCMD("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-") },\n\1{ 0, 0, NULL, {0} },|'
-
-# --- FIX 15: casar dwl con el wlroots REAL del sistema ---
-# dwl trae 'wlroots-0.20' (o 0.19...) escrito a fuego en config.mk.
-# Si tu distro trae otra serie, aqui se ajusta al que este instalado.
-WLR_PC=""
-for c in wlroots-0.20 wlroots-0.19 wlroots-0.18 wlroots-0.17 wlroots; do
-  if pkg-config --exists "$c" 2>/dev/null; then WLR_PC="$c"; break; fi
-done
-if [ -n "$WLR_PC" ]; then
-  ok "pkg-config de wlroots detectado: $WLR_PC"
-  sed -i -e "s/wlroots-0\.[0-9]*/$WLR_PC/g" \
-         -e "s/--cflags wlroots\([\`)]\| \)/--cflags $WLR_PC\1/g" \
-         -e "s/--libs wlroots\([\`)]\| \)/--libs $WLR_PC\1/g" config.mk
-else
-  warn "pkg-config no encuentra wlroots: dwl casi seguro fallara al compilar"
-fi
-
-make clean 2>/dev/null
-make || err "Error compilando dwl. Mira el error de arriba (suele ser wlroots)."
-sudo make install
-ok "dwl compilado e instalado"
-
-# ---------- Compilar dwlb ----------
-echo
-info "Compilando dwlb (barra de estado)..."
-cd "$REAL_HOME" || exit 1
-[ ! -d dwlb ] && sudo -u "$REAL_USER" git clone https://github.com/kolunmi/dwlb.git
-cd dwlb || err "No se pudo entrar en $REAL_HOME/dwlb"
-[ "$(stat -c %U . 2>/dev/null)" != "$REAL_USER" ] && sudo chown -R "$REAL_USER:$REAL_USER" .
-[ -f config.def.h ] && [ ! -f config.h ] && cp config.def.h config.h
-# Parche compatibilidad versiones nuevas de wayland
-if grep -qE 'zwlr_layer_shell_v1_interface, [0-9]+\)' dwlb.c 2>/dev/null; then
-  V=$(grep -oE 'zwlr_layer_shell_v1_interface, [0-9]+\)' dwlb.c | head -n1 | sed -n 's/.*, *\([0-9]*\))/\1/p')
-  [ -n "$V" ] && [ "$V" -gt 1 ] && sed -i "s|&zwlr_layer_shell_v1_interface, $V)|\&zwlr_layer_shell_v1_interface, (version < $V ? version : $V))|" dwlb.c
-fi
-make clean 2>/dev/null
-make
-sudo make install
-ok "dwlb instalado (el aviso fcft_set_scaling_filter es normal)"
-
-# ---------- Tema dwlb ----------
-sudo -u "$REAL_USER" mkdir -p "$REAL_HOME/.config/dwlb"
-cat > "$REAL_HOME/.config/dwlb/config" <<EOF
--font monospace:size=$DWLB_FONT_SIZE
--vertical-padding -2
--horizontal-padding 6
--hide-vacant-tags
--center-title
--status-commands
--no-bottom
--active-fg-color ffffff
--active-bg-color 89b4fa
--occupied-fg-color cdd6f4
--occupied-bg-color 313244
--inactive-fg-color a6adc8
--inactive-bg-color 1e1e2e
--urgent-fg-color 1e1e2e
--urgent-bg-color f38ba8
-EOF
-sudo chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.config" 2>/dev/null
-ok "Tema dwlb escrito en $REAL_HOME/.config/dwlb/config"
-
-# ---------- Estado de la barra ----------
-sudo tee /usr/local/bin/dwlb-status >/dev/null <<'STAT'
-#!/bin/sh
-# Imprime UNA linea de estado y termina.
-# Lo llama cada 5 s el runner (/usr/local/bin/dwl-status-runner).
-V=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null | awk '{printf "%d", $2*100}')
-BAT=""
-for B in /sys/class/power_supply/BAT*; do
-  [ -r "$B/capacity" ] || continue
-  CAP=$(cat "$B/capacity" 2>/dev/null)
-  ST=$(cat "$B/status" 2>/dev/null | cut -c1)
-  [ -n "$CAP" ] && BAT="  ^fg(89b4fa)BAT^fg(cdd6f4) ${CAP}%${ST}" && break
-done
-CPU=$(cut -d' ' -f1 /proc/loadavg)
-RAM=$(awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{printf "%.1fG",(t-a)/1048576}' /proc/meminfo)
-D=$(date '+%H:%M %d/%m')
-printf '^fg(89b4fa)CPU^fg(cdd6f4) %s  ^fg(89b4fa)RAM^fg(cdd6f4) %s%s  ^fg(89b4fa)VOL^fg(cdd6f4) %s%%  ^fg(cdd6f4)%s\n' "$CPU" "$RAM" "$BAT" "$V" "$D"
-STAT
-sudo chmod +x /usr/local/bin/dwlb-status
-
-# ---------- Runner barra + wallpaper ----------
-sudo tee /usr/local/bin/dwl-status-runner >/dev/null <<'RUN'
-#!/bin/sh
-# Fondo (swaybg) + barra (dwlb) + estado.
-# Vigilante: si la barra se cierra (Super+W la oculta) la sesion NO se
-# cae: el bucle la relanza en cuanto toque. dwl mata este grupo al salir.
-exec 3<&0
-SB=""; PB=""
-HIDDEN="$HOME/.cache/dwlb-hidden"
-clean(){ [ -n "$PB" ] && kill "$PB" 2>/dev/null; [ -n "$SB" ] && kill "$SB" 2>/dev/null; wait 2>/dev/null; }
-trap clean EXIT
-mkdir -p "$HOME/Pictures" "$HOME/.cache"
-if [ -f "$HOME/Pictures/wallpaper.jpg" ] && command -v swaybg >/dev/null; then
-  swaybg -i "$HOME/Pictures/wallpaper.jpg" -m fill < /dev/null >/dev/null 2>&1 & SB=$!
-fi
-while :; do
-  # 1) barra: arriba salvo que este oculta con Super+W
-  if [ -f "$HIDDEN" ]; then
-    if [ -n "$PB" ]; then kill "$PB" 2>/dev/null; PB=""; fi
-  elif [ -z "$PB" ] || ! kill -0 "$PB" 2>/dev/null; then
-    dwlb -no-ipc <&3 & PB=$!
-    sleep 1
-  fi
-  # 2) una linea de estado cada 5 s (si no hay barra, reintenta sin ruido)
-  if [ -n "$PB" ]; then
-    dwlb-status | dwlb -status-stdin all 2>/dev/null
-  fi
-  sleep 5
-done
-RUN
-sudo chmod +x /usr/local/bin/dwl-status-runner
-
-# ---------- Super+W: ocultar/mostrar barra · Super+Shift+W: arriba/abajo ----------
-sudo tee /usr/local/bin/dwlb-toggle >/dev/null <<'TOG'; sudo chmod +x /usr/local/bin/dwlb-toggle
-#!/bin/sh
-# Oculta o muestra la barra. El runner la relanza en ~1 s.
-F="$HOME/.cache/dwlb-hidden"
-mkdir -p "$HOME/.cache"
-if [ -f "$F" ]; then rm -f "$F"; else : > "$F"; pkill -x dwlb 2>/dev/null; fi
-exit 0
-TOG
-sudo tee /usr/local/bin/dwlb-flip >/dev/null <<'FLIP'; sudo chmod +x /usr/local/bin/dwlb-flip
-#!/bin/sh
-# Mueve la barra arriba/abajo comentando '-no-bottom' en la config.
-C="$HOME/.config/dwlb/config"
-mkdir -p "$HOME/.config/dwlb"; [ -f "$C" ] || : > "$C"
-if grep -q '^[[:space:]]*-no-bottom' "$C"; then
-  sed -i 's|^[[:space:]]*-no-bottom|#-no-bottom|' "$C"
-elif grep -q '^#-no-bottom' "$C"; then
-  sed -i 's|^#-no-bottom|-no-bottom|' "$C"
-else
-  echo '-no-bottom' >> "$C"
-fi
-pkill -x dwlb 2>/dev/null
-exit 0
-FLIP
-ok "Scripts de barra: dwlb-toggle (Super+W) y dwlb-flip (Super+Shift+W)"
-
-# ---------- Wallpaper por defecto ----------
-sudo -u "$REAL_USER" mkdir -p "$REAL_HOME/Pictures"
-if [ ! -f "$REAL_HOME/Pictures/wallpaper.jpg" ]; then
-  info "Descargando wallpaper por defecto..."
-  curl -fsSL --max-time 20 -o "$REAL_HOME/Pictures/wallpaper.jpg" https://wallpapercave.com/download/empty-error-wallpapers-wp8330753 || warn "Sin wallpaper: copia uno manual a ~/Pictures/wallpaper.jpg"
-  sudo chown "$REAL_USER:$REAL_USER" "$REAL_HOME/Pictures/wallpaper.jpg" 2>/dev/null
-fi
-
-# ---------- Chuleta de atajos ----------
-cat > "$REAL_HOME/Atajos.txt" <<'ATAJ'
-================================================
- ATAJOS DE DWL   (instalado por install-dwl)
-================================================
- Super = la tecla Windows (⌘ en teclados Mac)
-
- VENTANAS
-   Super + D                Lanzador de aplicaciones (wmenu)
-   Super + Enter            Terminal (foot)
-   Super + T                Terminal (foot)
-   Super + B                Firefox
-   Super + R                Gestor de archivos (lf)
-   Super + Q                Cerrar la ventana
-   Super + J / Super + K    Siguiente / anterior ventana
-   Super + H / Super + L    Achicar / agrandar el area maestra
-   Super + Shift + Espacio  Ventana flotante
-   Super + Shift + F        Pantalla completa
-
- TAGS (escritorios)
-   Super + 1..9             Ir a ese tag
-   Super + Shift + 1..9     Mover la ventana a ese tag
-   Super + Ctrl + 1..9      Mostrar / ocultar ese tag
-   Super + Tab              Volver al tag anterior
-   Super + 0                Ver todos los tags a la vez
-   Super + , / Super + .    Monitor anterior / siguiente
-
- LAYOUTS
-   Super + Shift + T        Tiling (el de siempre)
-   Super + F                Monocle (una ventana a la vez)
-   Super + Espacio          Volver al layout anterior
-
- BARRA
-   Super + W                Ocultar / mostrar la barra
-   Super + Shift + W        Mover la barra arriba / abajo
-   Super + rueda del raton  Subir / bajar el volumen
-
- SESION
-   Super + Shift + E        Cerrar la sesion
-   Super + Shift + Q        Cerrar la sesion
-   Ctrl + Alt + Backspace   Cerrar la sesion
-   Ctrl + Alt + F1..F12     Cambiar de consola (tu salida de emergencia)
-
- RATON
-   Super + clic izquierdo   Mover la ventana
-   Super + clic central     Volverla flotante
-   Super + clic derecho     Redimensionar
-
-------------------------------------------------
- ARCHIVOS Y COMANDOS
-   ~/dwl/config.h                 Atajos y colores -> luego: dwl-rebuild
-   ~/.config/dwlb/config          Fuente y colores de la barra
-   /usr/local/bin/dwlb-status     Bloques de estado (CPU, RAM, BAT, VOL)
-   /usr/local/bin/dwl-session     Lo que arranca con la sesion
-   ~/Pictures/wallpaper.jpg       Tu fondo de pantalla
-   nano ~/Atajos.txt              Esta chuleta
-------------------------------------------------
-ATAJ
-sudo chown "$REAL_USER:$REAL_USER" "$REAL_HOME/Atajos.txt" 2>/dev/null
-ok "Chuleta de atajos en ~/Atajos.txt"
-
-# ---------- Script de sesion dwl ----------
-info "Creando script de sesion..."
-grep -qw hypervisor /proc/cpuinfo && VM_FLAGS="export WLR_NO_HARDWARE_CURSORS=1 WLR_RENDERER=pixman" || VM_FLAGS=""
-sudo tee /usr/local/bin/dwl-session >/dev/null <<EOF
-#!/bin/sh
-export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=dwl MOZ_ENABLE_WAYLAND=1 QT_QPA_PLATFORM=wayland GDK_BACKEND=wayland,x11 XKB_DEFAULT_LAYOUT=$KB_LAYOUT
-$VM_FLAGS
-if [ ! -d "\$XDG_RUNTIME_DIR" ] || [ "\$(stat -c %u "\$XDG_RUNTIME_DIR" 2>/dev/null)" != "\$(id -u)" ]; then
-  export XDG_RUNTIME_DIR="\$HOME/.xdg-runtime"
-  mkdir -p "\$XDG_RUNTIME_DIR"; chmod 700 "\$XDG_RUNTIME_DIR"
-fi
-P=""
-start_daemon(){
-  name="\$1"; shift
-  pgrep -u "\$(id -u)" -x "\$name" >/dev/null && return 0
-  command -v "\$name" >/dev/null && { "\$@" >/dev/null 2>&1 & P="\$P \$!"; }
-}
-clean(){ for p in \$P; do kill "\$p" 2>/dev/null; done; wait 2>/dev/null; }
-trap clean EXIT
-start_daemon pipewire pipewire
-start_daemon wireplumber wireplumber
-command -v pipewire-pulse >/dev/null && start_daemon pipewire-pulse pipewire-pulse
-dwl -s /usr/local/bin/dwl-status-runner
-clean
-EOF
-sudo chmod +x /usr/local/bin/dwl-session
-ok "dwl-session creado en /usr/local/bin/dwl-session"
-
-# ---------- Utilidades de recompilacion ----------
-sudo tee /usr/local/bin/dwl-rebuild >/dev/null <<'RB'; sudo chmod +x /usr/local/bin/dwl-rebuild
-#!/bin/sh
-set -e; cd "$HOME/dwl"; make clean; make; sudo make install; echo "dwl recompilado, reinicia sesion."
-RB
-sudo tee /usr/local/bin/dwlb-rebuild >/dev/null <<'RB'; sudo chmod +x /usr/local/bin/dwlb-rebuild
-#!/bin/sh
-set -e; cd "$HOME/dwlb"; git pull --ff-only; make clean; make; sudo make install; echo "dwlb recompilado, reinicia sesion."
-RB
-
-# ---------- Entrada de sesion Wayland ----------
-sudo mkdir -p /usr/share/wayland-sessions
-sudo tee /usr/share/wayland-sessions/dwl.desktop >/dev/null <<DSK
-[Desktop Entry]
-Name=dwl
-Exec=/usr/local/bin/dwl-session
-Type=Application
-DesktopNames=dwl
-DSK
-ok "Sesion Wayland registrada: /usr/share/wayland-sessions/dwl.desktop"
-
-
-# =========================================================================
-# =========================================================================
-#   BLOQUE FINAL — INICIO DE SESION (greetd + tuigreet)
-#   Debe quedar SIEMPRE al final del script: se ejecuta cuando dwl,
-#   dwlb, dwl-session y dwl.desktop ya existen. Si se movia antes,
-#   tuigreet arrancaba contra una sesion inexistente y greetd caia.
-# =========================================================================
-# =========================================================================
-echo
-echo "============================================================"
-echo " BLOQUE FINAL v$VERSION — greetd / tuigreet (inicio de sesion)"
-echo "============================================================"
-
-# --- 0) Comprobaciones previas: la sesion tiene que existir YA ---
-for f in /usr/local/bin/dwl-session /usr/local/bin/dwl-status-runner /usr/share/wayland-sessions/dwl.desktop; do
-  if [ ! -f "$f" ]; then
-    err "Falta $f — el bloque de inicio de sesion no puede continuar."
-  fi
-done
-[ -x /usr/local/bin/dwl-session ] || sudo chmod +x /usr/local/bin/dwl-session
-ok "Sesion dwl verificada antes de tocar greetd"
-
-# --- 0b) FIX 11: detectar si tocar tty1 nos mataria la sesion ---
-# En tty1 tu shell ES el servicio agetty-tty1; pararlo = suicidio.
-ON_TTY1=0
-CUR_TTY="$(tty 2>/dev/null || true)"
-case "$CUR_TTY" in *tty1*) ON_TTY1=1 ;; esac
-IN_SESSION=0
-if [ -n "${WAYLAND_DISPLAY:-}" ] || [ -n "${DISPLAY:-}" ] || [ -n "${XDG_SESSION_ID:-}" ]; then
-  IN_SESSION=1
-fi
-[ "$ON_TTY1" -eq 1 ] && IN_SESSION=1
-DEFERRED=0
-if [ "$IN_SESSION" -eq 1 ]; then
-  info "Sesion detectada en ${CUR_TTY:-tty?}: greetd se activara en el REINICIO (modo seguro)."
-else
-  info "Sin sesion en tty1 (${CUR_TTY:-sin tty}): greetd se puede arrancar ahora mismo."
-fi
-
-# --- 0c) Quitar otros gestores de sesion (lightdm, gdm, sddm...) ---
-# Si hay sesion en marcha NO se paran: matarian la sesion. En ese caso
-# lo hace el helper dwl-enable-greetd en el apagado/arranque.
-for DM in lightdm gdm sddm xdm lxdm; do
-  if [ -L "/var/service/$DM" ] || [ -f "/usr/lib/systemd/system/$DM.service" ] || command -v "$DM" >/dev/null 2>&1; then
-    if [ "${IN_SESSION:-0}" -eq 1 ]; then
-      warn "Hay $DM instalado: se desactivara al reiniciar (no ahora, para no cortar tu sesion)"
-    else
-      info "Desactivando $DM (en su lugar se usa greetd)..."
-      if [ "$FAMILIA" = "void" ]; then
-        sudo sv down "$DM" >/dev/null 2>&1; sudo rm -f "/var/service/$DM"
-      else
-        sudo systemctl disable --now "$DM.service" >/dev/null 2>&1
-      fi
-      ok "$DM desactivado (no desinstalado)"
-    fi
-  fi
-done
-
-# --- 1) Binarios del greeter con ruta absoluta (FIX 6) ---
-GREETD_BIN=""
-for b in /usr/bin/greetd /usr/local/bin/greetd /usr/sbin/greetd; do
-  [ -x "$b" ] && GREETD_BIN="$b" && break
-done
-[ -z "$GREETD_BIN" ] && GREETD_BIN="$(command -v greetd 2>/dev/null)"
-[ -z "$GREETD_BIN" ] && err "No se encuentra el binario greetd. Instala el paquete greetd."
-info "Binario greetd: $GREETD_BIN"
-
-TUIGREET_BIN=""
-for b in /usr/bin/tuigreet /usr/local/bin/tuigreet /usr/bin/agreety; do
-  [ -x "$b" ] && TUIGREET_BIN="$b" && break
-done
-[ -z "$TUIGREET_BIN" ] && TUIGREET_BIN="$(command -v tuigreet 2>/dev/null)"
-if [ -n "$TUIGREET_BIN" ]; then
-  ok "Greeter: $TUIGREET_BIN"
-else
-  warn "No se localiza tuigreet; se usara 'tuigreet' a secas (puede fallar con el PATH de runit)"
-  TUIGREET_BIN="tuigreet"
-fi
-
-# --- 2) Usuario del greeter ---
-info "Configurando usuario greeter '$GREETER_USER'..."
-id -u "$GREETER_USER" >/dev/null 2>&1 || sudo useradd -r -s /sbin/nologin -d /var/lib/greetd "$GREETER_USER"
-sudo usermod -aG tty,video,input "$GREETER_USER"
-sudo mkdir -p /var/lib/greetd /etc/greetd
-sudo chown "$GREETER_USER:$GREETER_USER" /var/lib/greetd 2>/dev/null
-sudo chmod 700 /var/lib/greetd
-
-# --- 3) FIX 5: botones de power solo si hay loginctl ---
-if command -v loginctl >/dev/null 2>&1; then
-  POWER_FLAGS="--power-shutdown 'loginctl poweroff' --power-reboot 'loginctl reboot'"
-  ok "loginctl presente: tuigreet con botones de apagar/reiniciar"
-else
-  POWER_FLAGS=""
-  warn "Sin loginctl (Void sin elogind): tuigreet va sin botones de power"
-fi
-
-# --- 4) /etc/greetd/config.toml ---
-sudo tee /etc/greetd/config.toml >/dev/null <<TOML
-[terminal]
-vt = 1
-
-[default_session]
-command = "$TUIGREET_BIN --cmd /usr/local/bin/dwl-session --time --remember --asterisks $POWER_FLAGS"
-user = "$GREETER_USER"
-TOML
-sudo chmod 644 /etc/greetd/config.toml
-ok "/etc/greetd/config.toml escrito"
-echo "-------------------------------------------"
-sudo cat /etc/greetd/config.toml
-echo "-------------------------------------------"
-
-if [ "$FAMILIA" = "void" ]; then
-
-  # --- 5a) FIX 10: pam_turnstile solo si el modulo existe ---
-  if [ -f /etc/pam.d/greetd ] && ! grep -q pam_turnstile.so /etc/pam.d/greetd; then
-    if ls /usr/lib/security/pam_turnstile.so /usr/lib64/security/pam_turnstile.so >/dev/null 2>&1 \
-       && [ -L /var/service/turnstiled ]; then
-      printf '\nsession optional pam_turnstile.so\n' | sudo tee -a /etc/pam.d/greetd >/dev/null
-      ok "pam_turnstile anadido a /etc/pam.d/greetd"
-    else
-      warn "pam_turnstile omitido (modulo o turnstiled ausente) para no romper el login"
-    fi
-  fi
-
-  # --- 6a) FIX 6: servicio runit con ruta ABSOLUTA y sin 'down' ---
-  sudo mkdir -p /etc/sv/greetd
-  sudo rm -f /etc/sv/greetd/down /var/service/greetd/down
-  sudo tee /etc/sv/greetd/run >/dev/null <<RUN
-#!/bin/sh
-# greetd DEBE correr como ROOT: gestiona VTs, PAM y abre las sesiones.
-# v1.0 lo lanzaba con 'chpst -u greetd:greetd' -> moria al instante.
-# Se usa ruta ABSOLUTA porque runit NO hereda el PATH de tu usuario:
-# con 'exec greetd' a secas el servicio se quedaba down para siempre.
-sleep 2
-# Autocuracion de tty1: si aun queda un agetty viejo viviendo en tty1,
-# se retira su enlace y su proceso (idempotente; no toca tty2..tty6).
-rm -f /var/service/agetty-tty1
-pkill -f '/usr/bin/agetty.*tty1' 2>/dev/null
-sleep 1
-exec $GREETD_BIN -c /etc/greetd/config.toml 2>&1
-RUN
-  sudo chmod 755 /etc/sv/greetd/run
-
-  # --- 7a) FIX 7: servicio de log para poder diagnosticar ---
-  if command -v svlogd >/dev/null 2>&1; then
-    sudo mkdir -p /etc/sv/greetd/log /var/log/greetd
-    sudo tee /etc/sv/greetd/log/run >/dev/null <<'LOG'
-#!/bin/sh
-mkdir -p /var/log/greetd
-exec svlogd -tt /var/log/greetd
-LOG
-    sudo chmod 755 /etc/sv/greetd/log/run
-    ok "Log de greetd en /var/log/greetd/current"
-  else
-    warn "svlogd no disponible: sin log de greetd (instala 'runit'/'socklog' para tenerlo)"
-  fi
-
-  # --- 8a0) Helper idempotente: activar greetd en tty1 ---
-  sudo tee /usr/local/sbin/dwl-enable-greetd >/dev/null <<'EN'
-#!/bin/sh
-# Activa greetd en tty1 y retira agetty-tty1 y otros gestores de sesion.
-# Idempotente y silencioso: se ejecuta en el apagado (rc.shutdown),
-# en el arranque (rc.local) o a mano.
-rm -f /var/service/agetty-tty1
-pkill -f '/usr/bin/agetty.*tty1' 2>/dev/null
-for dm in lightdm gdm sddm xdm lxdm; do
-  rm -f "/var/service/$dm"
-  command -v systemctl >/dev/null 2>&1 && systemctl disable "$dm.service" 2>/dev/null
-done
-sleep 0.5
-ln -sfn /etc/sv/greetd /var/service/
-exit 0
-EN
-  sudo chmod 755 /usr/local/sbin/dwl-enable-greetd
-
-  # --- 8a) FIX 11: si hay sesion en marcha, NO se toca /var/service ---
-  if [ "$IN_SESSION" -eq 1 ]; then
-    # ===== MODO DIFERIDO: no se toca NADA de /var/service =====
-    warn "Estas dentro de una sesion (${CUR_TTY:-tty?}): no se toca agetty ni /var/service"
-    info "   Motivo: parar agetty-tty1 mataria tu propia sesion y dejaria tty1 muerto."
-    info "   Se programa el cambio para que se aplique solo, sin riesgo."
-    # Dos ganchos, ambos idempotentes:
-    #   /etc/rc.shutdown -> se aplica al apagar/reiniciar
-    #   /etc/rc.local    -> red de seguridad si apagas con el boton
-    for RC in /etc/rc.shutdown /etc/rc.local; do
-      [ -f "$RC" ] || printf '#!/bin/sh\n# Creado por install-dwl\n' | sudo tee "$RC" >/dev/null
-      if ! sudo grep -q 'dwl-enable-greetd' "$RC" 2>/dev/null; then
-        printf '\n# install-dwl: greetd en tty1 a partir del proximo arranque\n[ -x /usr/local/sbin/dwl-enable-greetd ] && /usr/local/sbin/dwl-enable-greetd\n' | sudo tee -a "$RC" >/dev/null
-      fi
-      sudo chmod +x "$RC"
-    done
-    ok "Activacion programada en /etc/rc.shutdown y /etc/rc.local"
-    ok "Servicio greetd creado en /etc/sv/greetd y config en /etc/greetd/config.toml"
-    DEFERRED=1
-  fi
-
-  if [ "$DEFERRED" -eq 0 ]; then
-  # ===== MODO ACTIVO (tty2+, ssh, ...): se puede tocar tty1 sin riesgo =====
-  info "Paso 1/4: retirando agetty de tty1..."
-  srun sv force-stop agetty-tty1 || true
-  srun rm -f /var/service/agetty-tty1 || true
-  info "Paso 2/4: habilitando greetd en /var/service..."
-  srun ln -sfn /etc/sv/greetd /var/service/ || true
-
-  if [ ! -L /var/service/greetd ]; then
-    err "No se pudo crear /var/service/greetd"
-  fi
-  ok "greetd enlazado en /var/service"
-
-  # runsvdir tarda hasta 5 s en crear supervise/
-  i=0
-  while [ "$i" -lt 40 ]; do
-    [ -d /var/service/greetd/supervise ] && break
-    i=$((i+1)); sleep 0.5
-  done
-  if [ -d /var/service/greetd/supervise ]; then
-    info "Paso 3/4: arrancando greetd..."
-    if pgrep -x greetd >/dev/null 2>&1; then
-      # Ya habia un greetd vivo (instalacion anterior): se reinicia para
-      # que relea /etc/greetd/config.toml y no queden dos peleando por tty1.
-      info "greetd ya estaba en marcha: reiniciando para releer la config..."
-      srun sv restart greetd || srun sv start greetd || true
-    else
-      srun sv start greetd || true
-    fi
-  else
-    warn "runsvdir no ha recogido el servicio todavia (puede que no estes bajo runit)"
-  fi
-
-  # verificacion: el proceso tiene que estar vivo
-  info "Paso 4/4: verificando que greetd sigue vivo..."
-  i=0; GREETD_UP=0
-  while [ "$i" -lt 40 ]; do
-    if pgrep -x greetd >/dev/null 2>&1; then GREETD_UP=1; break; fi
-    i=$((i+1)); sleep 0.5
-  done
-
-  echo
-  info "Estado del servicio:"
-  sudo sv status greetd 2>/dev/null || warn "sv no pudo consultar el estado"
-
-  if [ "$GREETD_UP" -eq 1 ]; then
-    ok "greetd esta CORRIENDO (PID: $(pgrep -x greetd | tr '\n' ' '))"
-    info "Si estas en tty1 puede aparecer tuigreet ahora mismo. Es normal."
-  else
-    FINAL_ERROR=1
-    warn "greetd NO arranco. Diagnostico:"
-    [ -f /var/log/greetd/current ] && { echo "  --- /var/log/greetd/current ---"; sudo tail -n 20 /var/log/greetd/current; echo "  --------------------------------"; }
-    echo "  Prueba manual:  sudo sv down greetd; sudo $GREETD_BIN -c /etc/greetd/config.toml"
-    echo "  Revisa tambien: dbus/seatd arriba, tty1 libre (sudo /usr/local/sbin/dwl-enable-greetd)"
-  fi
-  fi   # <- fin del MODO ACTIVO (DEFERRED=0)
-
-else
-
-  # --- 6b) systemd (Arch) ---
-  sudo mkdir -p /etc/systemd/system/greetd.service.d
-  sudo tee /etc/systemd/system/greetd.service.d/10-wait-ready.conf >/dev/null <<INI
-[Unit]
-After=systemd-logind.service systemd-user-sessions.service systemd-udev-settle.service plymouth-quit-wait.service
-Wants=systemd-logind.service
-Conflicts=getty@tty1.service
-INI
-  sudo systemctl mask getty@tty1 2>/dev/null
-  sudo systemctl enable greetd.service 2>/dev/null
-  sudo systemctl set-default graphical.target 2>/dev/null
-  if [ "${IN_SESSION:-0}" -eq 1 ]; then
-    # Mismo criterio que en runit: no reiniciar el gestor de sesion
-    # desde dentro de una sesion (mataria la sesion actual).
-    warn "Sesion activa: greetd solo se HABILITA (sin restart). Arranca tras el reboot."
-    DEFERRED=1
-  else
-    sudo systemctl enable --now greetd.service 2>/dev/null
-    sudo systemctl restart greetd.service 2>/dev/null
-    sleep 2
-    echo
-    info "Estado del servicio:"
-    sudo systemctl status greetd.service --no-pager -l 2>/dev/null | head -n 12
-    if systemctl is-active --quiet greetd.service; then
-      ok "greetd esta activo (systemd)"
-    else
-      FINAL_ERROR=1
-      warn "greetd no esta activo. Mira: journalctl -u greetd -b"
-    fi
-  fi
-fi
-
-# --- 9) Resumen final ---
-echo
-echo "============================================================"
-echo " UNICO PASO RESTANTE:"
-echo
-echo "    sudo reboot"
-echo
-if [ "${DEFERRED:-0}" -eq 1 ]; then
-  echo " Modo seguro (estabas dentro de una sesion):"
-  echo "   * NO se ha tocado agetty ni /var/service para no matar tu sesion."
-  echo "   * El cambio se aplica SOLO: al apagar (/etc/rc.shutdown) y,"
-  echo "     por si acaso, al arrancar (/etc/rc.local), ambos llamando a"
-  echo "     /usr/local/sbin/dwl-enable-greetd"
-  echo "   * Al arrancar: agetty-tty1 fuera, greetd en tty1 -> tuigreet."
-  echo
-  echo " Si queres activarlo YA sin reiniciar, desde tty2+:"
-  echo "     sudo /usr/local/sbin/dwl-enable-greetd"
-  echo
-else
-  echo " greetd ya esta habilitado y verificado."
-  echo " Tras reiniciar veras tuigreet directamente en tty1."
-fi
-echo " Inicia sesion con tu usuario y entras a dwl."
-echo
-echo " Si NO aparece tuigreet tras el reboot:"
-echo "   Void:  sudo sv status greetd"
-echo "          sudo tail -n 30 /var/log/greetd/current"
-echo "          sudo /usr/local/sbin/dwl-enable-greetd"
-echo "   Arch:  systemctl status greetd"
-echo "          journalctl -u greetd -b"
-echo "   (recuerda: tty2..tty6 siguen con agetty, entra por ahi)"
-echo
-echo " Atajos:  Super+Enter terminal    Super+d menu"
-echo "          Super+q cerrar          Super+w barra on/off"
-echo "          Super+Shift+e salir de sesion"
-echo "============================================================"
-[ "${FINAL_ERROR:-0}" -eq 1 ] && err "Revisa los errores de arriba antes de reiniciar."
-ok "Instalacion v$VERSION completada. Nos vemos tras el reboot."
-exit 0
+# dwl-instalador
+
+Instalador de **dwl** (el equivalente a *dwm*, pero para **Wayland**), ya preconfigurado, para **Void Linux** y **Arch Linux**.
+
+> ### ⚠️ VERSIÓN 0.9.7 (rev.3) — beta
+> - **Void Linux** (xbps + runit) y **Arch Linux** (pacman + systemd).
+> - Probado en simulación (repositorios y gestor de paquetes simulados) y en **Void x86_64 (glibc)**, que es la edición recomendada.
+> - La rama de **Arch** todavía no tiene una prueba completa en una máquina real: si algo falla, mira [🩺 Si algo falla](#-si-algo-falla).
+> - Se recomiendan **20 GB libres** para evitar errores de almacenamiento.
+
+<img width="1600" height="900" alt="Captura del escritorio dwl con la barra dwlb" src="https://github.com/user-attachments/assets/64108d84-8e2a-4731-8a71-3136811234e4" />
+
+---
+
+## Qué instala
+
+| Componente | Para qué sirve |
+|---|---|
+| **dwl** | El compositor (gestor de ventanas) Wayland |
+| **[dwlb](https://github.com/kolunmi/dwlb)** | La **barra** superior (tags, layout, estado) — autor: *kolunmi* |
+| **foot** | Emulador de terminal |
+| **wmenu** | Lanzador de aplicaciones (el equivalente a dmenu) |
+| **lf** | Gestor de archivos en la terminal |
+| **swaybg** | Fondo de pantalla |
+| **grim** | Capturas de pantalla |
+| **greetd + tuigreet** | Pantalla de inicio de sesión (en **tty1**) |
+| **pipewire + wireplumber** | Audio |
+| Firefox, mpv, zathura, imv, btop | Navegador, video, PDF, imágenes, monitor |
+
+El instalador tiene **un solo modo**: instala todo lo de la tabla, compila dwl y dwlb, aplica tu configuración y arranca con **greetd + tuigreet**.
+
+Además deja listo:
+
+- Los **repositorios** nonfree y multilib activados en **Void** (ver abajo).
+- La **zona horaria** (`/etc/localtime`, `TIMEZONE` en Void, y `chronyd` para la hora).
+- El **teclado**, tanto en la consola (`KEYMAP`) como en dwl.
+- Atajos de teclado con **Super** como tecla principal (en dwl por defecto es Alt).
+- Los comandos `dwl-rebuild` y `dwlb-rebuild`, para recompilar sin entrar a las carpetas.
+- `~/Atajos.txt` con la chuleta completa, en texto plano para leerla con `nano`.
+- Un fondo de pantalla por defecto en `~/Pictures/wallpaper.jpg` si no tienes uno.
+- Desactiva otros gestores de sesión si los hay (**lightdm, gdm, sddm, xdm, lxdm**). Se **desactivan**, no se desinstalan.
+
+**No instala drivers de GPU ni Steam.** Eso lo eliges tú aparte, en un comando (ver [Steam y drivers](#-steam-y-drivers-opcional)).
+
+---
+
+## Repositorios que deja activados (solo Void)
+
+En **Void**, el instalador activa estos repositorios antes de instalar los paquetes:
+
+| Repositorio | Qué te permite instalar después |
+|---|---|
+| **nonfree** | Driver de **NVIDIA**, Steam y otros paquetes con licencia no libre |
+| **multilib** | Librerías y programas de **32 bits** (los que piden Steam y Wine) |
+| **multilib/nonfree** | Librerías de 32 bits con licencia no libre |
+
+> **multilib y multilib/nonfree solo existen en x86_64 con glibc.** El instalador lo comprueba antes:
+> en **musl**, **aarch64** o **i686** no activa esos repos y sigue sin ellos.
+
+En **Arch** el instalador **no** activa `[multilib]`. Si quieres Steam, actívalo tú en `/etc/pacman.conf` (ver [Steam y drivers](#-steam-y-drivers-opcional)).
+
+---
+
+## Instalación en 4 pasos
+
+### 0. Primero instala `git`
+
+Lo necesitas para clonar el repositorio. El propio instalador también instala `git` como dependencia, pero para descargarlo antes hace falta tenerlo.
+
+```bash
+# Void
+sudo xbps-install -S git
+# Arch
+sudo pacman -S git
+```
+
+### 1. Clonar el repositorio
+
+```bash
+git clone https://github.com/dlycse/dwl-instalador.git
+```
+
+### 2. Entrar a la carpeta
+
+```bash
+cd dwl-instalador
+```
+
+### 3. Darle permisos de ejecución
+
+```bash
+chmod +x install-dwl-0.9.7.sh
+```
+
+### 4. Ejecutar el instalador
+
+**Desde una consola que no sea tty1** (por ejemplo `Ctrl` + `Alt` + `F2`, o una terminal dentro de tu escritorio actual). Si lo lanzas desde tty1, el script no toca esa consola en caliente y programa el cambio para el reinicio.
+
+```bash
+./install-dwl-0.9.7.sh
+```
+
+> Si tu copia del archivo tiene otro nombre, usa ese nombre en los pasos 3 y 4.
+
+---
+
+## ❓ Qué te va a preguntar el instalador
+
+En este orden:
+
+| Pregunta | Opciones |
+|---|---|
+| **Espacio libre** | Solo pregunta si hay menos de 20 GB libres en `/`: `s` para continuar, `N` para cancelar |
+| **Teclado** | `1` Inglés (us) · `2` Español de España (es) · `3` Latinoamericano (latam) — por defecto `3` |
+| **País o zona horaria** | Escribe tu país (`Colombia`, `México`, `Argentina`, `España`, `Chile`, `Perú`…) o la zona directa (`America/Bogota`). Por defecto `America/Bogota` |
+| **Kernel** | Pregunta si buscar e instalar el **kernel más reciente** de los repos. Si hay una serie nueva, se instala **junto** al actual (no lo reemplaza) y se activa al reiniciar |
+
+---
+
+## 🔁 Al terminar: **REINICIA** (importante)
+
+```bash
+sudo reboot
+```
+
+El reinicio **no es opcional**: los grupos nuevos (`_seatd` o `seat` y `video`) solo se aplican al volver a iniciar sesión, y **sin ellos dwl no puede abrir la GPU ni el teclado/ratón**.
+
+> Aunque ya veas la pantalla de `tuigreet`, **no entres todavía**. Reinicia primero.
+> Si elegiste instalar un kernel nuevo, el reinicio es doblemente necesario.
+
+### Cuando vuelvas a arrancar
+
+Verás **tuigreet** (una pantalla de login en texto, en la **tty 1**). Escribe tu usuario y contraseña:
+
+| Tecla | Acción |
+|---|---|
+| `F2` | Cambiar el comando de la sesión |
+| `F3` | Elegir otra sesión |
+| `F12` | Menú de apagar / reiniciar — **solo si hay `loginctl`** (en Void sin elogind no aparece) |
+
+> ℹ️ Este instalador usa **greetd + tuigreet** en **tty1**. Las consolas `tty2`…`tty6` siguen con `agetty` normal, por si necesitas entrar a una consola.
+
+---
+
+## 🎮 Steam y drivers (opcional)
+
+Esto **no** lo instala el instalador.
+
+### Void
+
+Como ya dejó los repositorios activados, es un comando:
+
+```bash
+# Steam  (más gamemode, gamescope o mono si los quieres)
+sudo xbps-install -Sy steam
+sudo xbps-install -Sy gamemode gamescope mono     # opcionales
+
+# Driver NVIDIA  (+ el modeset, imprescindible en Wayland)
+sudo xbps-install -Sy nvidia nvidia-libs-32bit
+echo "options nvidia-drm modeset=1" | sudo tee /etc/modprobe.d/nvidia-drm-modeset.conf
+
+# Driver AMD
+sudo xbps-install -Sy mesa-dri mesa-vulkan-radeon mesa-dri-32bit \
+    mesa-vulkan-radeon-32bit linux-firmware-amd vulkan-loader
+
+# Driver Intel
+sudo xbps-install -Sy mesa-dri mesa-vulkan-intel mesa-dri-32bit \
+    mesa-vulkan-intel-32bit intel-video-accel vulkan-loader
+```
+
+### Arch
+
+En Arch, Steam necesita el repositorio **`[multilib]`** activado en `/etc/pacman.conf` (descomenta las dos líneas de `[multilib]`), y luego:
+
+```bash
+sudo pacman -Syu steam
+# Driver AMD / Intel (Mesa ya viene con el instalador)
+sudo pacman -S vulkan-radeon lib32-vulkan-radeon     # AMD
+sudo pacman -S vulkan-intel lib32-vulkan-intel       # Intel
+# Driver NVIDIA
+sudo pacman -S nvidia-open nvidia-utils lib32-nvidia-utils
+```
+
+Para NVIDIA en Arch, activa el modeset del kernel con `nvidia_drm.modeset=1` (ver la [wiki de Arch](https://wiki.archlinux.org/title/NVIDIA#DRM_kernel_mode_setting)).
+
+### Comprobar la GPU
+
+```bash
+lspci -nn | grep -iE 'vga|3d controller|display controller'
+```
+
+Notas rápidas:
+
+- **Después de instalar un driver de GPU, reinicia.** El módulo solo se carga al arrancar.
+- **Portátiles híbridos (Intel/AMD + NVIDIA):** no hay `prime-run`. Para lanzar algo con la GPU dedicada, usa las variables a mano:
+  ```bash
+  __NV_PRIME_RENDER_OFFLOAD=1 __VK_LAYER_NV_optimus=NVIDIA_only \
+  __GLX_VENDOR_LIBRARY_NAME=nvidia steam
+  ```
+  y en las opciones de lanzamiento de un juego de Steam pon eso mismo antes de `%command%`.
+
+---
+
+## ⌨️ Atajos principales
+
+La tecla **Super** es la de Windows (⌘ en teclados de Mac). Lista completa en **`~/Atajos.txt`** (`nano ~/Atajos.txt`).
+
+| Atajo | Acción |
+|---|---|
+| `Super` + `D` | Lanzador (**wmenu**) |
+| `Super` + `Enter` / `Super` + `T` | Terminal (**foot**) |
+| `Super` + `B` | Firefox |
+| `Super` + `R` | Gestor de archivos (**lf**) |
+| `Super` + `Q` | Cerrar ventana |
+| `Super` + `J` / `K` | Siguiente / anterior ventana |
+| `Super` + `H` / `L` | Achicar / agrandar el área maestra |
+| `Super` + `W` | Ocultar / mostrar la **barra** |
+| `Super` + `Shift` + `W` | Mover la barra arriba / abajo |
+| `Super` + `F` | Layout *monocle* (una ventana a pantalla completa) |
+| `Super` + `Shift` + `T` | Volver al layout de mosaico (tiling) |
+| `Super` + `Shift` + `F` | Ventana a pantalla completa |
+| `Super` + `1`…`9` | Ir a ese tag |
+| `Super` + `Shift` + `1`…`9` | Mover la ventana a ese tag |
+| `Super` + `Ctrl` + `1`…`9` | Mostrar / ocultar ese tag |
+| `Super` + `Tab` | Volver al tag anterior |
+| `Super` + `0` | Ver **todos** los tags a la vez |
+| `Super` + `,` / `Super` + `.` | Monitor anterior / siguiente |
+| `Ctrl` + `Alt` + `F1`…`F12` | Cambiar de consola (tty) — **no lo borres**, es tu salida de emergencia |
+| `Super` + `Shift` + `E` | **Cerrar la sesión** |
+| `Super` + `Shift` + `Q` | Cerrar la sesión |
+| `Ctrl` + `Alt` + `Backspace` | Cerrar la sesión (alternativo) |
+
+**Con el ratón:** `Super` + clic izquierdo *mueve* la ventana · `Super` + clic central la vuelve *flotante* · `Super` + clic derecho la *redimensiona* · `Super` + rueda sube/baja el volumen.
+
+---
+
+## Personalizar tu escritorio
+
+| Archivo | Qué cambia | Cómo se aplica |
+|---|---|---|
+| `~/dwl/config.h` | **Atajos**, colores, reglas de ventanas, teclado | `dwl-rebuild` (= `cd ~/dwl && sudo make clean install`) |
+| `~/.config/dwlb/config` | Fuente y colores de la **barra** | Solo reinicia la sesión (no recompila) |
+| `/usr/local/bin/dwlb-status` | Los bloques de estado de la barra (CPU, RAM, batería, volumen) | Solo reinicia la sesión |
+| `~/dwlb/config.h` | Valores compilados de dwlb | `dwlb-rebuild` |
+| `~/.config/lf/lfrc` | Gestor de archivos `lf` | Al reabrir `lf` |
+| `/usr/local/bin/dwl-session` | Variables y programas que arrancan con la sesión | Al reiniciar la sesión |
+| `/etc/greetd/config.toml` | Pantalla de login (greetd + tuigreet) | `sudo sv restart greetd` (Void) o `sudo systemctl restart greetd` (Arch) |
+
+### Ejemplo: cambiar un atajo de teclado
+
+```bash
+nano ~/dwl/config.h           # 1. edita la tecla
+dwl-rebuild                   # 2. recompila e instala
+# 3. Super + Shift + E para salir y vuelve a entrar
+```
+
+> `dwl-rebuild` y `dwlb-rebuild` son los dos comandos que deja el instalador, para no tener que
+> entrar a `~/dwl` o `~/dwlb` cada vez.
+
+### Cambiar el fondo de pantalla
+
+El fondo es `~/Pictures/wallpaper.jpg` (lo aplica **swaybg**).
+
+1. Copia tu imagen a `~/Pictures/`.
+2. Renómbrala a **`wallpaper.jpg`**.
+
+```bash
+cp /ruta/de/mi-fondo.png ~/Pictures/wallpaper.jpg
+```
+
+> Solo cambia el **nombre**: el contenido puede ser PNG u otro formato, no hace falta convertirlo.
+
+---
+
+## 🩺 Si algo falla
+
+| Problema | Solución |
+|---|---|
+| dwl no arranca / pantalla en negro | Reinicia de verdad: `sudo reboot`. Casi siempre son los grupos `_seatd`/`seat`/`video` sin aplicar |
+| No puedes moverte / se colgó | `Ctrl` + `Alt` + `F2` para ir a una consola y ahí `sudo reboot` |
+| `tuigreet` no aparece | Está en la **tty 1**. Mira el estado: Void `sudo sv status greetd` · Arch `systemctl status greetd` |
+| El instalador termina con `greetd NO arranco` | Revisa el log: Void `sudo tail -n 30 /var/log/greetd/current` · Arch `journalctl -u greetd -b` |
+| Arch: `error: no se ha encontrado el paquete` | Ya no debería pasar: el instalador comprueba cada paquete antes de instalarlo y solo omite los que no existen. Verás un aviso `No estan en los repos, se omiten: …` |
+| Arch: `wlroots` no está en los repos | Lo detecta solo (prueba `wlroots0.20`, `0.19`, `0.18`…). Si no hay ninguno, avisa y dwl no compilará |
+| Falla al instalar los paquetes en **musl** o **aarch64** (Void) | Esos sistemas **no tienen** repositorio multilib: el instalador ya lo tiene en cuenta; si aun así falla, quita `void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree` de la línea de `xbps-install` y vuelve a ejecutarlo |
+| `steam` no aparece en XBPS | Resincroniza (`sudo xbps-install -Sy`) y comprueba los repos con `xbps-query -Rs steam` |
+| El audio no va | Void `sudo sv status seatd pipewire` · Arch `systemctl --user status pipewire wireplumber`, y reinicia la sesión |
+| Los clics en los tags de la barra no funcionan | La barra se lanza con `-no-ipc`. Usa `Super` + `1`…`9` |
+
+---
+
+## 🔗 Proyectos usados
+
+Este instalador no reinventa nada: une y configura proyectos existentes.
+
+| Proyecto | Enlace |
+|---|---|
+| **dwl** — compositor (dwm para Wayland) | https://codeberg.org/dwl/dwl |
+| **dwlb** — la barra *(autor: kolunmi)* | https://github.com/kolunmi/dwlb |
+| **lf** — gestor de archivos en terminal | https://github.com/gokcehan/lf |
+| **foot** — terminal | https://codeberg.org/dnkl/foot |
+| **wmenu** — lanzador | https://codeberg.org/adnano/wmenu |
+| **greetd / tuigreet** — inicio de sesión | https://git.sr.ht/~kennylevinsen/greetd |
+| **swaybg** — fondo de pantalla | https://github.com/swaywm/swaybg |
+| **grim** — capturas | https://github.com/emersion/grim |
+
+> 💡 ¿Quieres saber más de la barra? `man 1 dwlb` o visita https://github.com/kolunmi/dwlb
+
+---
+
+*Hecho para Void Linux y Arch Linux. Si encuentras un error, abre un issue en el repositorio.*
