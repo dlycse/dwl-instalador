@@ -1,5 +1,11 @@
 #!/bin/sh
-# install-dwl v0.9.2
+# install-dwl v0.9.3
+# Arreglos v0.9.3:
+#  - En Void (runit): greetd NO se arranca durante la instalacion, solo se habilita
+#    para el proximo arranque. No interrumpe el script.
+#  - En Void: greetd espera 2 segundos antes de iniciar para que seatd/udev/GPU esten listos,
+#    igual que el arreglo que hicimos para systemd en Arch.
+#  - No mas pantallas negras por servicios arrancandose a mitad de instalacion.
 set -e
 
 G="\033[1;32m"; Y="\033[1;33m"; R="\033[1;31m"; C="\033[1;36m"; N="\033[0m"
@@ -8,7 +14,7 @@ warn()  { printf "%b[!]%b %s\n" "$Y" "$N" "$1"; }
 err()   { printf "%b[x]%b %s\n" "$R" "$N" "$1"; exit 1; }
 header(){ printf "%b%s%b\n" "$C" "$1" "$N"; }
 
-VERSION="v0.9.2"
+VERSION="v0.9.3"
 [ "$(id -u)" -eq 0 ] && err "No ejecutes como root."
 command -v sudo >/dev/null 2>&1 || err "Falta sudo."
 command -v git >/dev/null 2>&1 || err "Falta git."
@@ -30,7 +36,7 @@ info "install-dwl $VERSION - Distribucion: $DISTRO"
 : "${WMENU_FONT_SIZE:=11}"; : "${DWLB_FONT_SIZE:=10}"
 WALLPAPER_PATH="${WALLPAPER_PATH:-$HOME/Pictures/wallpaper.jpg}"
 
-# HELPERS
+# HELPERS - NINGUN SERVICIO SE ARRANCA DURANTE LA INSTALACION
 if [ "$FAMILIA" = "void" ]; then
   PKGMAN(){ sudo xbps-install -Sy "$@"; }
   PKGHAS(){ xbps-query "$1" >/dev/null 2>&1; }
@@ -39,11 +45,34 @@ if [ "$FAMILIA" = "void" ]; then
   WLR_PKGS="wlroots wlroots-devel"; SEAT_PKGS="libseat libseat-devel seatd"
   GREET_PKGS="greetd tuigreet turnstile"; FONT_PKG="nerd-fonts"
   PULSE_PKGS="alsa-pipewire"; MESA_PKGS="mesa-dri libdrm-devel"; DEVEL_SUFFIX="-devel"
-  svc_enable() { [ -L "/var/service/$1" ] && info "$1 ya habilitado." || { [ -d "/etc/sv/$1" ] && sudo ln -sf "/etc/sv/$1" /var/service/ && info "$1 habilitado para el proximo arranque." || warn "No existe /etc/sv/$1"; }; }
-  svc_disable(){ [ -L "/var/service/$1" ] && { sudo sv stop "$1" 2>/dev/null; sudo rm -f "/var/service/$1"; info "$1 desactivado."; }; }
+  # IMPORTANTE: svc_enable solo crea el enlace PERO NO ARRANCA EL SERVICIO AHORA.
+  # Lo detenemos inmediatamente para que no se ejecute durante la instalacion.
+  svc_enable() {
+    if [ -L "/var/service/$1" ]; then
+      info "$1 ya esta habilitado."
+      sudo sv stop "$1" 2>/dev/null || true
+      return 0
+    fi
+    if [ -d "/etc/sv/$1" ]; then
+      sudo ln -sf "/etc/sv/$1" /var/service/
+      # DETENER el servicio inmediatamente: lo queremos habilitado para el reboot, NO ejecutandose ahora
+      sudo sv stop "$1" 2>/dev/null || true
+      info "$1 habilitado para el proximo arranque (no se inicia ahora)."
+    else
+      warn "No existe el servicio /etc/sv/$1"
+      return 1
+    fi
+  }
+  svc_disable(){
+    if [ -L "/var/service/$1" ]; then
+      sudo sv stop "$1" 2>/dev/null
+      sudo rm -f "/var/service/$1"
+      info "$1 desactivado."
+    fi
+  }
   disable_getty_vt(){ VT="$1"; [ -L "/var/service/agetty-tty$VT" ] && svc_disable "agetty-tty$VT"; }
   svc_reload(){ :; }
-  command -v xbps-install >/dev/null || err "Falta xbps-install."; [ -d /var/service ] || err "No existe /var/service."
+  command -v xbps-install >/dev/null || err "Falta xbps-install."; [ -d /var/service ] || err "No existe /var/service (runit)."
   PKGS="base-devel file pkg-config libinput libinput${DEVEL_SUFFIX} void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree wayland wayland${DEVEL_SUFFIX} wayland-protocols libxkbcommon libxkbcommon${DEVEL_SUFFIX} $WLR_PKGS $SEAT_PKGS xorg-server-xwayland $MESA_PKGS pango${DEVEL_SUFFIX} cairo${DEVEL_SUFFIX} pixman pixman${DEVEL_SUFFIX} fcft fcft${DEVEL_SUFFIX} tllist foot wmenu fastfetch pipewire wireplumber $PULSE_PKGS swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano $FONT_PKG lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils $GREET_PKGS"
 else
   PKGMAN(){ sudo pacman -Sy --needed --noconfirm "$@"; }
@@ -55,12 +84,22 @@ else
   SEAT_PKGS="seatd"; GREET_PKGS="greetd greetd-tuigreet"
   FONT_PKGS="ttf-nerd-fonts-symbols ttf-nerd-fonts-symbols-mono"
   PULSE_PKGS="pipewire-alsa pipewire-pulse"; MESA_PKGS="mesa libdrm"; DEVEL_SUFFIX=""
-  svc_enable() { systemctl is-enabled --quiet "$1" 2>/dev/null && info "$1 ya esta habilitado." || { sudo systemctl enable "$1" && info "$1 habilitado para el proximo arranque."; }; }
-  svc_disable(){ systemctl is-enabled --quiet "$1" 2>/dev/null && { sudo systemctl disable "$1" 2>/dev/null; info "$1 desactivado."; }; }
-  disable_getty_vt(){ VT="$1"; G="getty@tty${VT}.service"; sudo systemctl disable "$G" 2>/dev/null; sudo systemctl mask "$G" 2>/dev/null; }
+  # systemd: habilitar pero NO arrancar servicios durante la instalacion
+  svc_enable() {
+    if systemctl is-enabled --quiet "$1" 2>/dev/null; then
+      info "$1 ya esta habilitado."
+      sudo systemctl stop "$1" 2>/dev/null || true
+      return 0
+    fi
+    sudo systemctl enable "$1"
+    sudo systemctl stop "$1" 2>/dev/null || true
+    info "$1 habilitado para el proximo arranque (no se inicia ahora)."
+  }
+  svc_disable(){ systemctl is-enabled --quiet "$1" 2>/dev/null && { sudo systemctl stop "$1" 2>/dev/null; sudo systemctl disable "$1" 2>/dev/null; info "$1 desactivado."; }; }
+  disable_getty_vt(){ VT="$1"; G="getty@tty${VT}.service"; sudo systemctl stop "$G" 2>/dev/null; sudo systemctl disable "$G" 2>/dev/null; sudo systemctl mask "$G" 2>/dev/null; }
   svc_reload(){ sudo systemctl daemon-reload; }
   command -v pacman >/dev/null || err "Falta pacman."
-  grep -qE '^\[multilib\]' /etc/pacman.conf || warn "[multilib] deshabilitado (para Steam/32bits)."
+  grep -qE '^\[multilib\]' /etc/pacman.conf || warn "[multilib] deshabilitado (Steam/32bits)."
   PKGS="base-devel libinput wayland wayland-protocols libxkbcommon $WLR_PKG xcb-util-errors xcb-util-renderutil xcb-util-wm $SEAT_PKGS xorg-xwayland $MESA_PKGS pango cairo pixman fcft tllist foot wmenu fastfetch pipewire wireplumber $PULSE_PKGS swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano $FONT_PKGS lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils $GREET_PKGS"
 fi
 
@@ -100,7 +139,7 @@ compilar_dwlb(){
     [ -n "$V" ] && [ "$V" -gt 1 ] && sed -i "s|&zwlr_layer_shell_v1_interface, $V)|\&zwlr_layer_shell_v1_interface, (version < $V ? version : $V))|" dwlb.c
   fi
   make clean 2>/dev/null || true; make || err "Error compilando dwlb."; sudo make install
-  command -v dwlb >/dev/null || err "dwlb no quedo instalado en PATH."
+  command -v dwlb >/dev/null || err "dwlb no quedo instalado."
 }
 
 configurar_dwlb(){
@@ -146,38 +185,37 @@ STAT
   sudo chmod +x /usr/local/bin/dwlb-status
 }
 
-# Instalacion de paquetes
-info "Instalando paquetes del sistema..."
+# INSTALAR PAQUETES
+info "Instalando paquetes..."
 if [ "$FAMILIA" = "arch" ]; then
-  info "Actualizando archlinux-keyring primero para evitar errores de firmas..."
+  info "Actualizando archlinux-keyring primero..."
   sudo pacman -Sy --noconfirm archlinux-keyring 2>/dev/null || true
   if ! PKGMAN $PKGS; then
-    warn "Fallo la descarga (mirror desincronizado/404). Regenerando mirrorlist..."
+    warn "Fallo descarga 404 (mirror desactualizado), regenerando mirrorlist..."
     PKGHAS reflector || PKGMAN reflector
     sudo reflector --latest 20 --sort rate --save /etc/pacman.d/mirrorlist || warn "reflector fallo"
-    info "Reintentando instalacion..."
-    PKGMAN $PKGS || err "Sigue fallando la descarga de paquetes, revisa tu conexion."
+    info "Reintentando..."
+    PKGMAN $PKGS || err "Sigue fallando la descarga."
   fi
 else
   PKGMAN $PKGS || err "Fallo instalando paquetes."
 fi
 
-# Habilitar servicios base (solo para el proximo arranque, NO arrancarlos ahora)
+# Habilitar servicios base (NINGUNO se arranca ahora, solo se habilitan)
 info "Habilitando servicios base..."
 svc_enable dbus 2>/dev/null || warn "No se pudo habilitar dbus."
 svc_enable chronyd 2>/dev/null || warn "No se pudo habilitar chronyd."
-[ "$FAMILIA" = "void" ] && svc_enable seatd
+svc_enable seatd 2>/dev/null || warn "No se pudo habilitar seatd."
 
 RU=$(id -un)
-getent group "$SEAT_GRP" >/dev/null || err "No existe el grupo $SEAT_GRP"
+getent group "$SEAT_GRP" >/dev/null || err "No existe grupo $SEAT_GRP"
 sudo usermod -aG "$SEAT_GRP" "$RU"
 getent group video >/dev/null && sudo usermod -aG video "$RU"
-warn "Los grupos ($SEAT_GRP, video) se aplican cuando reinicies."
+warn "Los grupos ($SEAT_GRP, video) se aplican al reiniciar."
+detectar_gpu || warn "Deteccion GPU fallo, seguimos."
 
-detectar_gpu || warn "No se pudo detectar la GPU, seguimos."
-
-# Zona horaria
-printf "Pais (vacio para Colombia): "; read -r PAIS; PAIS="${PAIS:-Colombia}"
+# ZONA HORARIA
+printf "Pais (vacio = Colombia): "; read -r PAIS; PAIS="${PAIS:-Colombia}"
 PN=$(echo "$PAIS"|tr '[:upper:]' '[:lower:]'|sed 's/á/a/g;s/é/e/g;s/í/i/g;s/ó/o/g;s/ú/u/g;s/ñ/n/g')
 case "$PN" in colombia)tz=America/Bogota;;mexico)tz=America/Mexico_City;;argentina)tz=America/Buenos_Aires;;chile)tz=America/Santiago;;peru)tz=America/Lima;;espana)tz=Europe/Madrid;;usa)tz=America/New_York;;*/*)tz="$PAIS";;*)tz="";;esac
 if [ -n "$tz" ] && [ -f "/usr/share/zoneinfo/$tz" ]; then
@@ -189,7 +227,7 @@ if [ -n "$tz" ] && [ -f "/usr/share/zoneinfo/$tz" ]; then
   info "Zona horaria: $tz"
 fi
 
-# Teclado
+# TECLADO
 printf "Distribucion teclado 1=us 2=es 3=latam [3]: "; read -r TEC; TEC="${TEC:-3}"
 case "$TEC" in 1)KB=us;KC=us;;2)KB=es;KC=es;;*)KB=latam;KC=la-latin1;;esac
 if [ "$FAMILIA" = "void" ]; then
@@ -199,11 +237,11 @@ else
 fi
 command -v loadkeys >/dev/null && sudo loadkeys "$KC" 2>/dev/null || true
 
-# Compilar dwl
+# COMPILAR DWL
 cd "$HOME"; [ -d dwl ] || git clone https://codeberg.org/dwl/dwl.git; cd dwl
 [ "$(stat -c %U .)" != "$(id -un)" ] && sudo chown -R "$(id -un):$(id -gn)" .
 [ -f protocols/dwl-ipc-unstable-v2.xml ] || [ -f protocols/dwl-ipc-unstable-v1.xml ] && DWLB_IPC=1 || DWLB_IPC=0
-[ "$DWLB_IPC" -eq 1 ] && info "Soporte IPC de dwlb disponible."
+[ "$DWLB_IPC" -eq 1 ] && info "Soporte IPC dwlb disponible."
 if [ -f config.h ] && { grep -q 'static const char \*tags\[\]' config.h || ! grep -q TAGCOUNT config.h; }; then
   mv config.h "config.h.old-$(date +%Y%m%d%H%M%S)"
 fi
@@ -243,7 +281,7 @@ info "Compilando dwl..."; make clean 2>/dev/null || true; make || err "Error com
 compilar_dwlb; configurar_dwlb
 [ "$DWLB_IPC" -eq 1 ] && BM="-ipc" || BM="-no-ipc"
 
-# Runner barra
+# RUNNER BARRA
 sudo tee /usr/local/bin/dwl-status-runner >/dev/null <<'RUN'
 #!/bin/sh
 exec 3<&0; H=""; PB=""
@@ -264,13 +302,14 @@ wait "$PB"; clean
 RUN
 sudo chmod +x /usr/local/bin/dwl-status-runner
 
+# WALLPAPER
 mkdir -p "$(dirname "$WALLPAPER_PATH")"
 if [ ! -f "$WALLPAPER_PATH" ]; then
   T="${WALLPAPER_PATH}.tmp"
   curl -fsSL --max-time 25 -A Mozilla/5.0 -o "$T" https://wallpapercave.com/download/empty-error-wallpapers-wp8330753 && file "$T" | grep -qi image && mv "$T" "$WALLPAPER_PATH" || { rm -f "$T"; warn "No se descargo wallpaper."; }
 fi
 
-# Script de sesion
+# SESION DWL
 sudo tee /usr/local/bin/dwl-session >/dev/null <<EOF
 #!/bin/sh
 export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=dwl MOZ_ENABLE_WAYLAND=1 QT_QPA_PLATFORM=wayland GDK_BACKEND=wayland,x11
@@ -289,8 +328,7 @@ ud pipewire pipewire; ud wireplumber wireplumber; command -v pipewire-pulse >/de
 IN=\$(date +%s)
 dwl -s /usr/local/bin/dwl-status-runner & DP=\$!; wait "\$DP"; ST=\$?
 if [ "\$ST" -ne 0 ] && [ -z "\$WLR_RENDERER" ] && [ \$((\$(date +%s) - IN)) -lt 5 ]; then
-  echo "Reintento con pixman...">&2
-  export WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 LIBGL_ALWAYS_SOFTWARE=1
+  echo "Reintento con pixman...">&2; export WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 LIBGL_ALWAYS_SOFTWARE=1
   dwl -s /usr/local/bin/dwl-status-runner & DP=\$!; wait "\$DP"; ST=\$?
 fi
 clean; exit "\$ST"
@@ -299,13 +337,13 @@ sudo chmod +x /usr/local/bin/dwl-session
 echo "$GPU_VENDORS" | grep -q nvidia && sudo sed -i 's|^IN=|export WLR_NO_HARDWARE_CURSORS=1\nIN=|' /usr/local/bin/dwl-session
 [ "$GPU_HIBRIDA" -eq 1 ] && [ -n "$GPU_CARDS" ] && sudo sed -i "s|^IN=|# export WLR_DRM_DEVICES=$GPU_CARDS\nIN=|" /usr/local/bin/dwl-session
 
+# UTILIDADES
 sudo tee /usr/local/bin/dwl-rebuild >/dev/null <<'RB'; sudo chmod +x /usr/local/bin/dwl-rebuild
 #!/bin/sh;set -e;cd "$HOME/dwl";make clean;make;sudo make install;echo "✅ Listo, reinicia sesion."
 RB
 sudo tee /usr/local/bin/dwlb-rebuild >/dev/null <<'RB'; sudo chmod +x /usr/local/bin/dwlb-rebuild
 #!/bin/sh;set -e;cd "$HOME/dwlb";git pull --ff-only;make clean;make;sudo make install;echo "✅ Listo, reinicia sesion."
 RB
-
 sudo mkdir -p /usr/share/wayland-sessions
 sudo tee /usr/share/wayland-sessions/dwl.desktop >/dev/null <<DSK
 [Desktop Entry]
@@ -336,26 +374,27 @@ cmd open ${{
 LFRC
 
 # ----------------------------------------------------------------
-# CONFIGURACION GREETD - SOLO HABILITAR, NO ARRANCAR DURANTE INSTALACION
+# CONFIGURACION GREETD: NUNCA SE ARRANCA DURANTE INSTALACION
 # ----------------------------------------------------------------
 info "Configurando greetd..."
 if PKGHAS lightdm || PKGHAS lightdm-gtk3-greeter || PKGHAS lightdm-gtk-greeter; then
   info "Quitando lightdm para evitar conflictos..."
-  svc_disable lightdm
-  PKGREM lightdm lightdm-gtk3-greeter lightdm-gtk-greeter 2>/dev/null || true
+  svc_disable lightdm; PKGREM lightdm lightdm-gtk3-greeter lightdm-gtk-greeter 2>/dev/null || true
 fi
 
-# Wrapper de espera (espera a GPU, pero solo se ejecuta en el reboot, NO AHORA)
+# Wrapper que espera a la GPU (funciona igual en Arch y Void)
 sudo tee /usr/local/bin/greetd-tuigreet-wrapper >/dev/null <<'WRAP'
 #!/bin/sh
-# Espera hasta que la GPU este lista ANTES de mostrar tuigreet
-for i in $(seq 1 20); do
+# Esperar hasta que la GPU y dispositivos DRM esten listos antes de mostrar tuigreet
+# Funciona tanto en systemd (Arch) como en runit (Void)
+for i in $(seq 1 30); do
   if ls /dev/dri/card* >/dev/null 2>&1; then
-    sleep 1
+    sleep 2
     exec tuigreet --cmd /usr/local/bin/dwl-session
   fi
   sleep 0.5
 done
+# Si pasaron 15 segundos y aun no hay GPU, intentar de todas formas
 exec tuigreet --cmd /usr/local/bin/dwl-session
 WRAP
 sudo chmod +x /usr/local/bin/greetd-tuigreet-wrapper
@@ -372,27 +411,36 @@ vt = $GREETD_VT
 command = "/usr/local/bin/greetd-tuigreet-wrapper"
 user = "$GREETER_USR"
 TOML
-  # Drop-in systemd: arranque solo cuando el sistema este listo
+  # Drop-in systemd
   sudo mkdir -p /etc/systemd/system/greetd.service.d
   sudo tee /etc/systemd/system/greetd.service.d/10-wait-ready.conf >/dev/null <<INI
 [Unit]
 After=systemd-logind.service systemd-user-sessions.service systemd-udev-settle.service plymouth-quit-wait.service
 Wants=systemd-logind.service
-ExecStartPre=/bin/sleep 1
+ExecStartPre=/bin/sleep 2
 Conflicts=getty@tty1.service getty@tty${GREETD_VT}.service
 INI
-  # Reemplazar agetty (NO ARRANCAR GREETD AHORA, solo habilitarlo para reboot)
   disable_getty_vt "$GREETD_VT"
   sudo ln -sf /usr/lib/systemd/system/greetd.service /etc/systemd/system/autovt@tty1.service
-  # IMPORTANTE: Parar greetd si esta corriendo para que no interrumpa el script, luego solo habilitar
   sudo systemctl stop greetd.service 2>/dev/null || true
   svc_reload
-  sudo systemctl disable greetd.service 2>/dev/null
-  sudo systemctl enable greetd.service >/dev/null
-  info "✅ greetd CONFIGURADO y HABILITADO para arrancar automaticamente DESPUES de reiniciar."
-  warn "NO se inicia greetd ahora para no interrumpir la instalacion."
+  sudo systemctl disable greetd.service 2>/dev/null; sudo systemctl enable greetd.service >/dev/null
+  info "✅ greetd configurado y listo para arrancar DESPUES de reboot."
 else
+  # Void / runit
   disable_getty_vt "$GREETD_VT"
+  # Asegurarse que el usuario greeter exista en Void
+  id -u "$GREETER_USR" >/dev/null 2>&1 || sudo useradd -r -s /sbin/nologin -d /var/lib/greetd "$GREETER_USR"
+  sudo usermod -aG tty,video,input "$GREETER_USR"
+  sudo mkdir -p /var/lib/greetd; sudo chown "$GREETER_USR:$GREETER_USR" /var/lib/greetd 2>/dev/null; sudo chmod 700 /var/lib/greetd
+  # Modificar el run script de greetd para que arranque DESPUES de seatd
+  # Añadir una dependencia: greetd necesita que seatd este corriendo
+  if [ -f /etc/sv/greetd/run ]; then
+    # Agregar espera de seatd al principio del run script
+    if ! grep -q "seatd" /etc/sv/greetd/run; then
+      sudo sed -i '2i # Esperar a que seatd este corriendo\nwhile ! sv status seatd | grep -q "^run: "; do sleep 0.5; done\nsleep 2' /etc/sv/greetd/run
+    fi
+  fi
   sudo mkdir -p /etc/greetd
   sudo tee /etc/greetd/config.toml >/dev/null <<TOML
 [terminal]
@@ -401,12 +449,13 @@ vt = $GREETD_VT
 command = "/usr/local/bin/greetd-tuigreet-wrapper"
 user = "$GREETER_USR"
 TOML
-  [ "$NEED_TURNSTILE" -eq 1 ] && {
+  if [ "$NEED_TURNSTILE" -eq 1 ]; then
     svc_enable turnstiled
     P=/etc/pam.d/greetd
     [ -f "$P" ] && ! grep -q pam_turnstile.so "$P" && echo -e "\nsession optional pam_turnstile.so" | sudo tee -a "$P" >/dev/null
-  }
+  fi
   svc_enable greetd
+  info "✅ greetd configurado en Void, arrancara despues de seatd en el reboot."
 fi
 
 echo
@@ -416,17 +465,14 @@ header "=========================================="
 echo
 echo " 📦 Distribucion:  $DISTRO"
 echo " 🖋️  Tamaños:       wmenu=mono:$WMENU_FONT_SIZE  /  dwlb=mono:$DWLB_FONT_SIZE"
-echo " 🔐 Login:         greetd+tuigreet, NO se arranco durante la instalacion"
-echo "                   para no interrumpir el script."
+echo " 🔐 Login:         greetd+tuigreet con espera de GPU"
+echo " ⚠️  NINGUN servicio se arranco durante la instalacion, no hay interrupciones."
 echo
-warn "----------------------------------------"
-warn " 🚨 PROXIMO PASO: ejecuta  sudo reboot"
-warn "----------------------------------------"
-warn " Los grupos ($SEAT_GRP, video) se aplican al reiniciar."
-warn " Despues del reinicio greetd arrancara SOLO CUANDO LA GPU"
-warn " este 100% lista, sin pantallas negras ni interrupciones."
+warn"----------------------------------------"
+warn" 🚨 PROXIMO PASO:  ejecuta  sudo reboot"
+warn"----------------------------------------"
+warn" Los grupos ($SEAT_GRP, video) se aplican al reiniciar."
+warn" En el arranque greetd esperara 2 segundos hasta que seatd y la GPU"
+warn" esten 100% listos antes de mostrar tuigreet, sin inicios prematuros."
 echo
-info "Atajos:"
-echo "  Super+Enter → foot | Super+d → wmenu | Super+q → cerrar ventana"
-echo "  Super+w → ocultar/mostrar barra | Super+Shift+e → cerrar sesion"
-echo
+info"Atajos: Super+Enter=foot | Super+d=wmenu | Super+q=cerrar | Super+w=toggle barra"
