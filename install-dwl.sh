@@ -43,7 +43,7 @@ info "Teclado seleccionado: $KB_LAYOUT"
 # Instalar paquetes por distro
 if [ "$FAMILIA" = "void" ]; then
  info "Instalando paquetes para Void Linux..."
- sudo xbps-install -Sy base-devel libinput-devel wayland-devel wayland-protocols libxkbcommon-devel wlroots-devel libseat-devel seatd xorg-server-xwayland mesa-dri libdrm-devel pango-devel cairo-devel pixman-devel fcft-devel tllist foot wmenu fastfetch pipewire wireplumber alsa-pipewire swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd tuigreet turnstile || err "Fallo instalando paquetes."
+ sudo xbps-install -Sy base-devel libinput-devel wayland-devel wayland-protocols libxkbcommon-devel wlroots-devel libseat-devel seatd xorg-server-xwayland mesa-dri libdrm-devel pango-devel cairo-devel pixman-devel libgudev-devel fcft-devel tllist foot wmenu fastfetch pipewire wireplumber alsa-pipewire swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd tuigreet turnstile || err "Fallo instalando paquetes."
  GREETER_USER="_greeter"
  SEAT_GROUP="_seatd"
  # Habilitar servicios base PERO NO ARRANCARLOS
@@ -238,7 +238,7 @@ if [ "$FAMILIA" = "void" ]; then
  sudo tee /etc/sv/greetd/run >/dev/null <<'RUN'
 #!/bin/sh
 sleep 3
-exec greetd -c /etc/greetd/config.toml
+exec chpst -u greetd:greetd greetd -c /etc/greetd/config.toml 2>&1
 RUN
  sudo chmod +x /etc/sv/greetd/run
  if [ -f /etc/pam.d/greetd ] && ! grep -q pam_turnstile.so /etc/pam.d/greetd; then
@@ -255,6 +255,13 @@ Conflicts=getty@tty1.service
 INI
  sudo ln -sf /usr/lib/systemd/system/greetd.service /etc/systemd/system/autovt@tty1.service 2>/dev/null
 fi
+
+# Crear usuario dedicado greetd si no existe (requerido en Void por chpst)
+id greetd >/dev/null 2>&1 || sudo useradd -r -s /sbin/nologin -d /var/lib/greetd greetd
+sudo usermod -aG tty,video,input greetd 2>/dev/null
+sudo mkdir -p /var/lib/greetd
+sudo chown greetd:greetd /var/lib/greetd 2>/dev/null
+sudo chmod 700 /var/lib/greetd
 
 # ==============================================================
 # PANTALLA FINAL - HABILITACION SEGURA DE GREETD
