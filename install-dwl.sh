@@ -256,27 +256,41 @@ INI
  sudo ln -sf /usr/lib/systemd/system/greetd.service /etc/systemd/system/autovt@tty1.service 2>/dev/null
 fi
 
-# PANTALLA FINAL - SIN HABILITACION AUTOMATICA
+# ==============================================================
+# PANTALLA FINAL - HABILITACION SEGURA DE GREETD
+# ==============================================================
 echo
 echo "============================================================"
 echo " ✅ INSTALACION v1.0 COMPLETADA - SIN ERRORES NI CUELGUES"
 echo "============================================================"
 echo
-if [ "$FAMILIA" = "void" ]; then
-echo " ⚠️  PASO FINAL ANTES DE REINICIAR (copia y pega estos comandos):"
-echo
-echo "   sudo rm -f /var/service/agetty-tty1"
-echo "   sudo ln -sf /etc/sv/greetd /var/service/"
+if confirm "Habilitar greetd/tuigreet AHORA como ultimo paso (100% seguro, ya todo esta instalado)?"; then
+ info "Habilitando greetd..."
+ if [ "$FAMILIA" = "void" ]; then
+  sudo rm -f /var/service/agetty-tty1 2>/dev/null
+  sudo ln -sf /etc/sv/greetd /var/service/
+  ok "greetd habilitado en Void"
+ else
+  sudo systemctl mask getty@tty1
+  sudo systemctl enable greetd
+  ok "greetd habilitado en Arch"
+ fi
+ ok "✅ Listo! El gestor de login se activara en el proximo arranque."
 else
-echo " ⚠️  PASO FINAL ANTES DE REINICIAR (copia y pega estos comandos):"
-echo
-echo "   sudo systemctl mask getty@tty1"
-echo "   sudo systemctl enable greetd"
+ echo
+ echo " ⚠️  Cuando quieras habilitar greetd manualmente, ejecuta:"
+ if [ "$FAMILIA" = "void" ]; then
+  echo "   sudo rm -f /var/service/agetty-tty1"
+  echo "   sudo ln -sf /etc/sv/greetd /var/service/"
+ else
+  echo "   sudo systemctl mask getty@tty1"
+  echo "   sudo systemctl enable greetd"
+ fi
 fi
 echo
-echo " Despues ejecuta: sudo reboot"
+echo " 📌 Ahora ejecuta: sudo reboot"
 echo
-echo " Al reiniciar veras tuigreet directamente en la pantalla de login."
+echo " Al reiniciar veras tuigreet directamente en tty1 sin tener que cambiar de consola."
 echo " Atajos principales:"
 echo "  🪟 Super + Enter   → Terminal foot"
 echo "  🚀 Super + d       → Lanzador wmenu"
