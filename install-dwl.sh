@@ -2,68 +2,6 @@
 # ============================================================
 # install-dwl v0.9.7 — Wayland con dwl + dwlb (Void + Arch)
 # ------------------------------------------------------------
-# CAMBIO PRINCIPAL RESPECTO A v1.0 / v1.1:
-#   TODO lo relacionado con el INICIO DE SESION (usuario greeter,
-#   /etc/greetd/config.toml, servicio runit/systemd de greetd,
-#   tuigreet, PAM y el arranque del servicio) se ha movido AL
-#   FINAL DEL SCRIPT, como ultimo bloque de codigo.
-#
-#   Motivo: en v1.x greetd se configuraba y se habilitaba en
-#   medio del script, antes de que existieran
-#   /usr/local/bin/dwl-session y
-#   /usr/share/wayland-sessions/dwl.desktop. runit/systemd
-#   arrancaba greetd, tuigreet lanzaba una sesion incompleta o
-#   moria, y el servicio quedaba "down" / crashlooping.
-#
-#   Ahora el orden es:
-#     1) paquetes  2) kernel  3) servicios base  4) dwl
-#     5) dwlb      6) tema + barra  7) wallpaper
-#     8) dwl-session  9) rebuilders  10) wayland-sessions
-#    11) >>> INICIO DE SESION (greetd/tuigreet) <<<  <- FINAL
-#
-# CORRECCIONES ACUMULADAS:
-#  FIX 1  greetd corre como ROOT (nunca con chpst -u greetd).
-#  FIX 2  SIN archivo 'down' y SIN 'sv stop' (v1.0 dejaba el
-#         servicio instalado pero jamas arrancado -> tty1 muerto).
-#  FIX 3  Kernel dinamico leido con xbps-query.
-#  FIX 4  seatd, dbus y turnstiled habilitados en /var/service.
-#  FIX 5  Botones de power de tuigreet solo si existe loginctl.
-#  FIX 6  (0.9.7) Ruta ABSOLUTA al binario greetd en el 'run' de
-#         runit: runit no hereda el PATH del usuario y 'exec
-#         greetd' fallaba en silencio -> servicio down permanente.
-#  FIX 7  (0.9.7) Servicio de LOG (svlogd) para greetd, para que
-#         se pueda ver por que no arranca (/var/log/greetd/current).
-#  FIX 8  (0.9.7) Espera activa a que runsvdir cree
-#         /var/service/greetd/supervise antes de 'sv start', y
-#         verificacion final de que el proceso esta vivo.
-#  FIX 9  (0.9.7) Se usa SUDO_USER/HOME real: si ejecutabas el
-#         script con sudo, $USER era root y dwl se clonaba en
-#         /root y los grupos se daban a root.
-#  FIX 10 (0.9.7) pam_turnstile solo se anade si el modulo existe
-#         y turnstiled esta habilitado (si no, rompia el login).
-#  FIX 11 (0.9.7 rev.2) ¡EL BUG QUE CONGELABA LA PANTALLA!
-#         Si ejecutas el script desde tty1, tu shell ES el proceso
-#         supervisado agetty-tty1 (agetty -> login -> tu shell, mismo
-#         PID). 'sv force-stop agetty-tty1' = SIGKILL a tu propia
-#         sesion: el script moria y tty1 quedaba muerto (sin agetty
-#         y sin greetd). Ahora se detecta el tty/sesion y, si es
-#         peligroso, NO se toca /var/service: el cambio se programa
-#         en /etc/rc.shutdown y se aplica al reiniciar.
-#  FIX 12 (0.9.7 rev.2) sudo -v al inicio + keep-alive en segundo
-#         plano (la credencial caduca durante el 'make' de dwl/dwlb)
-#         y 'timeout' en las llamadas a sv/systemctl para que nunca
-#         se quede colgado esperando una password invisible.
-#  FIX 13 (0.9.7 rev.3) Arch: wlroots se DETECTA en los repos
-#         (wlroots0.20 / 0.19 / 0.18...). El nombre fijo
-#         'wlroots0.19' desaparecio y pacman abortaba TODA la
-#         instalacion por ese unico paquete.
-#  FIX 14 (0.9.7 rev.3) Arch: la lista se filtra con 'pacman -Si',
-#         se instala en lote y, si falla, uno a uno (+ AUR con
-#         yay/paru). Ningun paquete perdido tumba la instalacion.
-#  FIX 15 (0.9.7 rev.3) dwl trae "wlroots-0.20" escrito a fuego en
-#         config.mk: se detecta el pkg-config real del sistema y se
-#         parchea, asi compila igual con 0.19, 0.20 o la que venga.
-# ============================================================
 set +e
 
 VERSION="0.9.7"
@@ -118,6 +56,15 @@ esac
 [ "$FAMILIA" = "unknown" ] && err "Solo compatible con Void Linux y Arch Linux."
 info "Distro detectada: ${ID:-unknown} (familia: $FAMILIA)"
 
+# ---------- Espacio libre ----------
+FREE_GB="$(df -BG --output=avail / 2>/dev/null | tail -n1 | tr -dc '0-9')"
+if [ -n "$FREE_GB" ] && [ "$FREE_GB" -lt 20 ]; then
+  warn "Solo quedan ${FREE_GB} GB libres en / (se recomiendan 20 GB)."
+  confirm "Continuar igualmente?" || err "Cancelado. Libera espacio y vuelve a intentarlo."
+else
+  ok "Espacio libre: ${FREE_GB:-desconocido} GB"
+fi
+
 # ---------- Teclado ----------
 echo
 echo "Selecciona distribucion de teclado:"
@@ -130,8 +77,66 @@ case "$KB" in
 esac
 ok "Teclado seleccionado: $KB_LAYOUT"
 
+# ---------- Zona horaria ----------
+echo
+printf " [?] Pais o zona horaria [America/Bogota]: "; read -r TZIN
+TZIN="${TZIN:-America/Bogota}"
+resolv_tz(){
+  case "$1" in
+    [Cc]olombia)                              echo "America/Bogota" ;;
+    [Mm]exico|[Mm]éxico)                      echo "America/Mexico_City" ;;
+    [Aa]rgentina)                             echo "America/Buenos_Aires" ;;
+    [Ee]spana|[Ee]spaña|[Ss]pain)             echo "Europe/Madrid" ;;
+    [Cc]hile)                                 echo "America/Santiago" ;;
+    [Pp]eru|[Pp]erú)                          echo "America/Lima" ;;
+    [Ee]cuador)                               echo "America/Guayaquil" ;;
+    [Vv]enezuela)                             echo "America/Caracas" ;;
+    [Uu]ruguay)                               echo "America/Montevideo" ;;
+    [Bb]olivia)                               echo "America/La_Paz" ;;
+    [Pp]araguay)                              echo "America/Asuncion" ;;
+    [Gg]uatemala)                             echo "America/Guatemala" ;;
+    [Cc]uba)                                  echo "America/Havana" ;;
+    [Cc]osta[Rr]ica)                          echo "America/Costa_Rica" ;;
+    [Pp]anama|[Pp]anamá)                      echo "America/Panama" ;;
+    [Rr]epublica[Dd]ominicana)                echo "America/Santo_Domingo" ;;
+    [Ee]stados[Uu]nidos|[Uu][Ss][Aa])         echo "America/New_York" ;;
+    *)  # o lo busca tal cual en el arbol zoneinfo
+        if [ -f "/usr/share/zoneinfo/$1" ]; then echo "$1"
+        else find /usr/share/zoneinfo -type f 2>/dev/null | grep -i "/$1\$" | head -n1 | sed 's|.*/zoneinfo/||'; fi ;;
+  esac
+}
+TZONE="$(resolv_tz "$TZIN")"
+if [ -n "$TZONE" ] && [ -f "/usr/share/zoneinfo/$TZONE" ]; then
+  sudo ln -sf "/usr/share/zoneinfo/$TZONE" /etc/localtime
+  if [ "$FAMILIA" = "void" ]; then
+    if grep -q '^TIMEZONE=' /etc/rc.conf 2>/dev/null; then
+      sudo sed -i "s|^TIMEZONE=.*|TIMEZONE=\"$TZONE\"|" /etc/rc.conf
+    else
+      echo "TIMEZONE=\"$TZONE\"" | sudo tee -a /etc/rc.conf >/dev/null
+    fi
+    [ -d /etc/sv/chronyd ] && { sudo ln -sfn /etc/sv/chronyd /var/service/; sudo sv start chronyd >/dev/null 2>&1; }
+  else
+    sudo timedatectl set-timezone "$TZONE" 2>/dev/null || true
+    sudo systemctl enable --now chronyd.service >/dev/null 2>&1 || sudo systemctl enable --now chrony.service >/dev/null 2>&1 || true
+  fi
+  ok "Zona horaria: $TZONE"
+else
+  warn "No encontre la zona '$TZIN'; se deja la que ya tenias"
+fi
+
 if [ "$FAMILIA" = "void" ]; then
   # ==================== VOID LINUX ====================
+  # --- Repositorios extra: nonfree (NVIDIA/Steam) y multilib (32 bits) ---
+  # OJO: multilib solo existe en x86_64 con glibc. En musl/aarch64/i686
+  # esos paquetes no existen y XBPS fallaria, asi que se comprueba antes.
+  if [ "$(uname -m)" = "x86_64" ] && ldd --version 2>/dev/null | grep -qi glibc; then
+    info "Activando repositorios nonfree y multilib..."
+    sudo xbps-install -Sy void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree \
+      || warn "No se pudieron activar los repos extra (continuo sin ellos)"
+  else
+    info "Sistema sin multilib (musl/aarch64/i686): se instala sin repos extra"
+  fi
+
   info "Instalando paquetes base para Void Linux..."
   sudo xbps-install -Sy base-devel git libinput-devel wayland-devel wayland-protocols libxkbcommon-devel wlroots-devel libseat-devel seatd xorg-server-xwayland mesa-dri libdrm-devel pango-devel cairo-devel pixman-devel libgudev-devel fcft-devel tllist foot wmenu fastfetch pipewire wireplumber alsa-pipewire swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd tuigreet turnstile || err "Fallo instalando paquetes."
   GREETER_USER="greetd"
@@ -269,7 +274,66 @@ cd dwl || err "No se pudo entrar en $REAL_HOME/dwl"
 [ "$(stat -c %U . 2>/dev/null)" != "$REAL_USER" ] && sudo chown -R "$REAL_USER:$REAL_USER" .
 rm -f config.h
 cp config.def.h config.h
-sed -i "s/\.layout = NULL,/.layout = \"$KB_LAYOUT\",/" config.h
+
+# ---------- Parcheo de config.h (FIX 16 + atajos del README) ----------
+# Se parte SIEMPRE del config.def.h de la version clonada, y cada parche
+# se verifica: si el ancla cambia en una version futura de dwl, avisa en
+# vez de quedarse mudo (que es lo que pasaba con el layout, FIX 16).
+apply_patch(){
+  _d="$1"; _e="$2"
+  _b="$(cksum < config.h)"
+  sed -i "$_e" config.h 2>/dev/null
+  _a="$(cksum < config.h)"
+  if [ "$_b" != "$_a" ]; then ok "  config.h: $_d"; else warn "  config.h: NO aplicado -> $_d"; fi
+}
+
+info "Ajustando config.h de dwl..."
+# 1) MODKEY: dwl trae Alt por defecto; aqui pasa a Super (la tecla Windows)
+apply_patch "MODKEY Alt -> Super (LOGO)" \
+  's/#define MODKEY WLR_MODIFIER_ALT/#define MODKEY WLR_MODIFIER_LOGO/'
+# 2) Layout de teclado (FIX 16: dwl actual no trae '.layout = NULL,')
+if grep -q '\.layout = NULL,' config.h; then
+  apply_patch "layout $KB_LAYOUT" "s/\.layout = NULL,/.layout = \"$KB_LAYOUT\",/"
+elif grep -q '\.options = NULL,' config.h; then
+  apply_patch "layout $KB_LAYOUT" "s/\.options = NULL,/.options = NULL, .layout = \"$KB_LAYOUT\",/"
+else
+  warn "  config.h: no encontre donde poner el layout (se usa XKB_DEFAULT_LAYOUT)"
+fi
+# 3) Lanzador en Super+D (dwl trae Super+P)
+apply_patch "lanzador Super+D" 's/XKB_KEY_p,\(.*\)menucmd/XKB_KEY_d,\1menucmd/'
+# 4) Terminal en Super+Enter (dwl trae Super+Shift+Enter)
+apply_patch "terminal Super+Enter" \
+  's/MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_Return,\(.*\)/MODKEY,                    XKB_KEY_Return,\1/'
+# 5) Cerrar ventana con Super+Q (dwl trae Super+Shift+C)
+apply_patch "cerrar Super+Q" \
+  's/MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_c,\(.*\)killclient/MODKEY,                    XKB_KEY_q,\1killclient/'
+# 6) Super+F = monocle (dwl trae ahi el modo flotante)
+apply_patch "monocle Super+F" 's/XKB_KEY_f,\(.*\)&layouts\[1\]/XKB_KEY_f,\1\&layouts[2]/'
+
+# 7) Atajos extra: se insertan AL PRINCIPIO de keys[] (dwl usa la primera
+#    coincidencia, asi que ganan a los de por defecto).
+KEYS_FILE="$(mktemp 2>/dev/null || echo /tmp/dwl-keys.$$)"
+cat > "$KEYS_FILE" <<KEYS
+	{ MODKEY,                    XKB_KEY_b,           spawn,            SHCMD("firefox &") },
+	{ MODKEY,                    XKB_KEY_r,           spawn,            SHCMD("foot -e lf &") },
+	{ MODKEY,                    XKB_KEY_t,           spawn,            {.v = termcmd} },
+	{ MODKEY,                    XKB_KEY_w,           spawn,            SHCMD("/usr/local/bin/dwlb-toggle") },
+	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_w,           spawn,            SHCMD("/usr/local/bin/dwlb-flip") },
+	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_f,           togglefullscreen, {0} },
+	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_e,           quit,             {0} },
+	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_t,           setlayout,        {.v = &layouts[0]} },
+KEYS
+if grep -q '^static const Key keys\[\] = {' config.h; then
+  sed -i "/^static const Key keys\[\] = {/r $KEYS_FILE" config.h
+  ok "  config.h: atajos extra (Firefox, lf, barra, salir, tiling)"
+else
+  warn "  config.h: no encontre el array keys[] (atajos extra omitidos)"
+fi
+rm -f "$KEYS_FILE"
+
+# 8) Rueda del raton + Super = volumen (los ejes vienen vacios en dwl)
+apply_patch "volumen con Super+rueda" \
+  's|^\([[:space:]]*\){ 0, 0, NULL, {0} },|\1{ MODKEY, AxisUp,   spawn, SHCMD("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+") },\n\1{ MODKEY, AxisDown, spawn, SHCMD("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-") },\n\1{ 0, 0, NULL, {0} },|'
 
 # --- FIX 15: casar dwl con el wlroots REAL del sistema ---
 # dwl trae 'wlroots-0.20' (o 0.19...) escrito a fuego en config.mk.
@@ -335,33 +399,80 @@ ok "Tema dwlb escrito en $REAL_HOME/.config/dwlb/config"
 # ---------- Estado de la barra ----------
 sudo tee /usr/local/bin/dwlb-status >/dev/null <<'STAT'
 #!/bin/sh
-while :; do
-  V=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null | awk '{printf "%d", $2*100}')
-  CPU=$(cut -d' ' -f1 /proc/loadavg)
-  RAM=$(awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{printf "%.1fG",(t-a)/1048576}' /proc/meminfo)
-  D=$(date '+%H:%M %d/%m')
-  printf '^fg(89b4fa)CPU^fg(cdd6f4) %s  ^fg(89b4fa)RAM^fg(cdd6f4) %s  ^fg(89b4fa)VOL^fg(cdd6f4) %s%%  ^fg(cdd6f4)%s\n' "$CPU" "$RAM" "$V" "$D"
-  sleep 5
+# Imprime UNA linea de estado y termina.
+# Lo llama cada 5 s el runner (/usr/local/bin/dwl-status-runner).
+V=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null | awk '{printf "%d", $2*100}')
+BAT=""
+for B in /sys/class/power_supply/BAT*; do
+  [ -r "$B/capacity" ] || continue
+  CAP=$(cat "$B/capacity" 2>/dev/null)
+  ST=$(cat "$B/status" 2>/dev/null | cut -c1)
+  [ -n "$CAP" ] && BAT="  ^fg(89b4fa)BAT^fg(cdd6f4) ${CAP}%${ST}" && break
 done
+CPU=$(cut -d' ' -f1 /proc/loadavg)
+RAM=$(awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{printf "%.1fG",(t-a)/1048576}' /proc/meminfo)
+D=$(date '+%H:%M %d/%m')
+printf '^fg(89b4fa)CPU^fg(cdd6f4) %s  ^fg(89b4fa)RAM^fg(cdd6f4) %s%s  ^fg(89b4fa)VOL^fg(cdd6f4) %s%%  ^fg(cdd6f4)%s\n' "$CPU" "$RAM" "$BAT" "$V" "$D"
 STAT
 sudo chmod +x /usr/local/bin/dwlb-status
 
 # ---------- Runner barra + wallpaper ----------
 sudo tee /usr/local/bin/dwl-status-runner >/dev/null <<'RUN'
 #!/bin/sh
-exec 3<&0; H=""; PB=""
-clean(){ for p in $H; do kill "$p" 2>/dev/null; done; wait 2>/dev/null; }
+# Fondo (swaybg) + barra (dwlb) + estado.
+# Vigilante: si la barra se cierra (Super+W la oculta) la sesion NO se
+# cae: el bucle la relanza en cuanto toque. dwl mata este grupo al salir.
+exec 3<&0
+SB=""; PB=""
+HIDDEN="$HOME/.cache/dwlb-hidden"
+clean(){ [ -n "$PB" ] && kill "$PB" 2>/dev/null; [ -n "$SB" ] && kill "$SB" 2>/dev/null; wait 2>/dev/null; }
 trap clean EXIT
-mkdir -p "$HOME/Pictures"
+mkdir -p "$HOME/Pictures" "$HOME/.cache"
 if [ -f "$HOME/Pictures/wallpaper.jpg" ] && command -v swaybg >/dev/null; then
-  swaybg -i "$HOME/Pictures/wallpaper.jpg" -m fill < /dev/null >/dev/null 2>&1 & H="$H $!"
+  swaybg -i "$HOME/Pictures/wallpaper.jpg" -m fill < /dev/null >/dev/null 2>&1 & SB=$!
 fi
-dwlb -no-ipc <&3 & PB=$!; H="$H $PB"
-sleep 1
-(dwlb-status | dwlb -status-stdin all) < /dev/null >/dev/null 2>&1 & H="$H $!"
-wait "$PB"; clean
+while :; do
+  # 1) barra: arriba salvo que este oculta con Super+W
+  if [ -f "$HIDDEN" ]; then
+    if [ -n "$PB" ]; then kill "$PB" 2>/dev/null; PB=""; fi
+  elif [ -z "$PB" ] || ! kill -0 "$PB" 2>/dev/null; then
+    dwlb -no-ipc <&3 & PB=$!
+    sleep 1
+  fi
+  # 2) una linea de estado cada 5 s (si no hay barra, reintenta sin ruido)
+  if [ -n "$PB" ]; then
+    dwlb-status | dwlb -status-stdin all 2>/dev/null
+  fi
+  sleep 5
+done
 RUN
 sudo chmod +x /usr/local/bin/dwl-status-runner
+
+# ---------- Super+W: ocultar/mostrar barra · Super+Shift+W: arriba/abajo ----------
+sudo tee /usr/local/bin/dwlb-toggle >/dev/null <<'TOG'; sudo chmod +x /usr/local/bin/dwlb-toggle
+#!/bin/sh
+# Oculta o muestra la barra. El runner la relanza en ~1 s.
+F="$HOME/.cache/dwlb-hidden"
+mkdir -p "$HOME/.cache"
+if [ -f "$F" ]; then rm -f "$F"; else : > "$F"; pkill -x dwlb 2>/dev/null; fi
+exit 0
+TOG
+sudo tee /usr/local/bin/dwlb-flip >/dev/null <<'FLIP'; sudo chmod +x /usr/local/bin/dwlb-flip
+#!/bin/sh
+# Mueve la barra arriba/abajo comentando '-no-bottom' en la config.
+C="$HOME/.config/dwlb/config"
+mkdir -p "$HOME/.config/dwlb"; [ -f "$C" ] || : > "$C"
+if grep -q '^[[:space:]]*-no-bottom' "$C"; then
+  sed -i 's|^[[:space:]]*-no-bottom|#-no-bottom|' "$C"
+elif grep -q '^#-no-bottom' "$C"; then
+  sed -i 's|^#-no-bottom|-no-bottom|' "$C"
+else
+  echo '-no-bottom' >> "$C"
+fi
+pkill -x dwlb 2>/dev/null
+exit 0
+FLIP
+ok "Scripts de barra: dwlb-toggle (Super+W) y dwlb-flip (Super+Shift+W)"
 
 # ---------- Wallpaper por defecto ----------
 sudo -u "$REAL_USER" mkdir -p "$REAL_HOME/Pictures"
@@ -371,12 +482,73 @@ if [ ! -f "$REAL_HOME/Pictures/wallpaper.jpg" ]; then
   sudo chown "$REAL_USER:$REAL_USER" "$REAL_HOME/Pictures/wallpaper.jpg" 2>/dev/null
 fi
 
+# ---------- Chuleta de atajos ----------
+cat > "$REAL_HOME/Atajos.txt" <<'ATAJ'
+================================================
+ ATAJOS DE DWL   (instalado por install-dwl)
+================================================
+ Super = la tecla Windows (⌘ en teclados Mac)
+
+ VENTANAS
+   Super + D                Lanzador de aplicaciones (wmenu)
+   Super + Enter            Terminal (foot)
+   Super + T                Terminal (foot)
+   Super + B                Firefox
+   Super + R                Gestor de archivos (lf)
+   Super + Q                Cerrar la ventana
+   Super + J / Super + K    Siguiente / anterior ventana
+   Super + H / Super + L    Achicar / agrandar el area maestra
+   Super + Shift + Espacio  Ventana flotante
+   Super + Shift + F        Pantalla completa
+
+ TAGS (escritorios)
+   Super + 1..9             Ir a ese tag
+   Super + Shift + 1..9     Mover la ventana a ese tag
+   Super + Ctrl + 1..9      Mostrar / ocultar ese tag
+   Super + Tab              Volver al tag anterior
+   Super + 0                Ver todos los tags a la vez
+   Super + , / Super + .    Monitor anterior / siguiente
+
+ LAYOUTS
+   Super + Shift + T        Tiling (el de siempre)
+   Super + F                Monocle (una ventana a la vez)
+   Super + Espacio          Volver al layout anterior
+
+ BARRA
+   Super + W                Ocultar / mostrar la barra
+   Super + Shift + W        Mover la barra arriba / abajo
+   Super + rueda del raton  Subir / bajar el volumen
+
+ SESION
+   Super + Shift + E        Cerrar la sesion
+   Super + Shift + Q        Cerrar la sesion
+   Ctrl + Alt + Backspace   Cerrar la sesion
+   Ctrl + Alt + F1..F12     Cambiar de consola (tu salida de emergencia)
+
+ RATON
+   Super + clic izquierdo   Mover la ventana
+   Super + clic central     Volverla flotante
+   Super + clic derecho     Redimensionar
+
+------------------------------------------------
+ ARCHIVOS Y COMANDOS
+   ~/dwl/config.h                 Atajos y colores -> luego: dwl-rebuild
+   ~/.config/dwlb/config          Fuente y colores de la barra
+   /usr/local/bin/dwlb-status     Bloques de estado (CPU, RAM, BAT, VOL)
+   /usr/local/bin/dwl-session     Lo que arranca con la sesion
+   ~/Pictures/wallpaper.jpg       Tu fondo de pantalla
+   nano ~/Atajos.txt              Esta chuleta
+------------------------------------------------
+ATAJ
+sudo chown "$REAL_USER:$REAL_USER" "$REAL_HOME/Atajos.txt" 2>/dev/null
+ok "Chuleta de atajos en ~/Atajos.txt"
+
 # ---------- Script de sesion dwl ----------
 info "Creando script de sesion..."
 grep -qw hypervisor /proc/cpuinfo && VM_FLAGS="export WLR_NO_HARDWARE_CURSORS=1 WLR_RENDERER=pixman" || VM_FLAGS=""
 sudo tee /usr/local/bin/dwl-session >/dev/null <<EOF
 #!/bin/sh
-export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=dwl MOZ_ENABLE_WAYLAND=1 QT_QPA_PLATFORM=wayland GDK_BACKEND=wayland,x11
+export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=dwl MOZ_ENABLE_WAYLAND=1 QT_QPA_PLATFORM=wayland GDK_BACKEND=wayland,x11 XKB_DEFAULT_LAYOUT=$KB_LAYOUT
 $VM_FLAGS
 if [ ! -d "\$XDG_RUNTIME_DIR" ] || [ "\$(stat -c %u "\$XDG_RUNTIME_DIR" 2>/dev/null)" != "\$(id -u)" ]; then
   export XDG_RUNTIME_DIR="\$HOME/.xdg-runtime"
@@ -459,6 +631,25 @@ if [ "$IN_SESSION" -eq 1 ]; then
 else
   info "Sin sesion en tty1 (${CUR_TTY:-sin tty}): greetd se puede arrancar ahora mismo."
 fi
+
+# --- 0c) Quitar otros gestores de sesion (lightdm, gdm, sddm...) ---
+# Si hay sesion en marcha NO se paran: matarian la sesion. En ese caso
+# lo hace el helper dwl-enable-greetd en el apagado/arranque.
+for DM in lightdm gdm sddm xdm lxdm; do
+  if [ -L "/var/service/$DM" ] || [ -f "/usr/lib/systemd/system/$DM.service" ] || command -v "$DM" >/dev/null 2>&1; then
+    if [ "${IN_SESSION:-0}" -eq 1 ]; then
+      warn "Hay $DM instalado: se desactivara al reiniciar (no ahora, para no cortar tu sesion)"
+    else
+      info "Desactivando $DM (en su lugar se usa greetd)..."
+      if [ "$FAMILIA" = "void" ]; then
+        sudo sv down "$DM" >/dev/null 2>&1; sudo rm -f "/var/service/$DM"
+      else
+        sudo systemctl disable --now "$DM.service" >/dev/null 2>&1
+      fi
+      ok "$DM desactivado (no desinstalado)"
+    fi
+  fi
+done
 
 # --- 1) Binarios del greeter con ruta absoluta (FIX 6) ---
 GREETD_BIN=""
@@ -562,10 +753,15 @@ LOG
   # --- 8a0) Helper idempotente: activar greetd en tty1 ---
   sudo tee /usr/local/sbin/dwl-enable-greetd >/dev/null <<'EN'
 #!/bin/sh
-# Activa greetd en tty1 y retira agetty-tty1. Idempotente y silencioso.
-# Se ejecuta en el apagado (desde /etc/rc.shutdown) o a mano.
+# Activa greetd en tty1 y retira agetty-tty1 y otros gestores de sesion.
+# Idempotente y silencioso: se ejecuta en el apagado (rc.shutdown),
+# en el arranque (rc.local) o a mano.
 rm -f /var/service/agetty-tty1
 pkill -f '/usr/bin/agetty.*tty1' 2>/dev/null
+for dm in lightdm gdm sddm xdm lxdm; do
+  rm -f "/var/service/$dm"
+  command -v systemctl >/dev/null 2>&1 && systemctl disable "$dm.service" 2>/dev/null
+done
 sleep 0.5
 ln -sfn /etc/sv/greetd /var/service/
 exit 0
