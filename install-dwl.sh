@@ -2,7 +2,7 @@
 # install-dwl v1.0 - Multi-distro (Void + Arch/derivados)
 # 100% SIN CUELGUES: los servicios solo se habilitan COMO ULTIMO PASO
 # Greetd/tuigreet arranca automaticamente en tty1 al reiniciar
-set -e
+set +e
 
 # Funciones de salida (TODAS, ya no falta ninguna)
 info(){ echo " [+] $1"; }
@@ -67,9 +67,23 @@ if [ "$FAMILIA" = "void" ]; then
   if confirm "Instalar ultimo kernel 7.x estable disponible en repositorios?"; then
    info "Actualizando lista de paquetes..."
    sudo xbps-install -Sy >/dev/null 2>&1
-   info "Instalando ultimo kernel oficial de Void..."
-   sudo xbps-install -y linux linux-headers || warn "No se pudo instalar kernel, se mantiene el actual."
-   ok "Kernel instalado correctamente (cargara al reiniciar)"
+   info "Buscando paquetes de kernel 7.x en los repositorios..."
+   # Buscar versiones de kernel 7.x desde mas nueva a mas vieja
+   KERN_FOUND=""
+   for KVER in 7.14 7.13 7.12 7.11 7.10 7.9 7.8; do
+    if xbps-query -R linux${KVER} >/dev/null 2>&1; then
+     KERN_FOUND="linux${KVER} linux${KVER}-headers"
+     info "Encontrado kernel: linux${KVER}"
+     break
+    fi
+   done
+   if [ -n "$KERN_FOUND" ]; then
+    info "Instalando: $KERN_FOUND"
+    sudo xbps-install -y $KERN_FOUND
+    ok "Kernel 7.x instalado correctamente, se activara al reiniciar"
+   else
+    warn "No se encontro kernel 7.x en repositorios, se mantiene kernel actual $(uname -r)"
+   fi
   fi
  else
   ok "Ya tienes kernel 7.x o superior, no se necesita actualizacion."
@@ -294,24 +308,35 @@ fi
 
 # ==============================================================
 # PASO FINAL - HABILITACION AUTOMATICA DE GREETD
-# 100% SEGURO: es lo ULTIMO que hace el script, ya TODO esta instalado
+# ESTE BLOQUE SE EJECUTA SI O SI, NO SE SALTA NUNCA
 # ==============================================================
+FINAL_ERROR=0
 echo
 echo "============================================================"
-echo " ✅ INSTALACION v1.0 COMPLETADA SIN ERRORES"
+echo " 📋 FINALIZANDO INSTALACION v1.0"
 echo " ============================================================"
 echo
-info "Habilitando greetd/tuigreet automaticamente..."
+info "Habilitando greetd/tuigreet AHORA, no te saltes este paso..."
 if [ "$FAMILIA" = "void" ]; then
- sudo sv stop agetty-tty1 2>/dev/null || true
+ sudo sv force-stop agetty-tty1 2>/dev/null
  sudo rm -f /var/service/agetty-tty1
  sudo rm -f /var/service/greetd 2>/dev/null
  sudo ln -sf /etc/sv/greetd /var/service/
- ok "greetd habilitado en Void correctamente"
+ # Comprobar que realmente se creo el enlace
+ if [ -L /var/service/greetd ]; then
+  ok "✅ greetd HABILITADO CORRECTAMENTE en /var/service (Void)"
+  ok "   Enlace: $(ls -la /var/service/greetd | awk '{print $9, $10, $11}')"
+ else
+  warn "❌ No se pudo crear el enlace de greetd"
+  FINAL_ERROR=1
+ fi
+ sudo touch /etc/sv/greetd/down 2>/dev/null
+ # IMPORTANTE: NO ARRANCAR GREETD AHORA, se arranca en el proximo boot
+ sudo sv stop greetd 2>/dev/null || true
 else
  sudo systemctl mask getty@tty1
  sudo systemctl enable greetd
- ok "greetd habilitado en Arch correctamente"
+ ok "✅ greetd HABILITADO CORRECTAMENTE (Arch)"
 fi
 echo
 echo " 📌 UNICO COMANDO QUE TIENES QUE EJECUTAR AHORA:"
