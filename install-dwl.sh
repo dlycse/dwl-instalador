@@ -1,5 +1,5 @@
 #!/bin/sh
-# install-dwl v0.9.4
+# install-dwl v0.9.5
 # Instalador de dwl (dwm para Wayland) - FUNCIONA 100% AUTOMATICO.
 #
 # Distros soportadas sin intervencion manual:
@@ -16,7 +16,7 @@
 # NO instala drivers de GPU ni Steam (lo haces tu segun tu grafica).
 #
 # Variables sobreescribibles por entorno:
-#   WMENU_FONT_SIZE=11 DWLB_FONT_SIZE=10 GREETD_VT=1 ./install-dwl-v0.9.4.sh
+#   WMENU_FONT_SIZE=11 DWLB_FONT_SIZE=10 GREETD_VT=1 ./install-dwl-v0.9.5.sh
 
 set -e
 
@@ -27,7 +27,7 @@ warn(){ printf "%b[!]%b %s\n" "$Y" "$N" "$1"; }
 err() { printf "%b[x]%b %s\n" "$R" "$N" "$1"; exit 1; }
 hdr() { printf "%b%s%b\n" "$C" "$1" "$N"; }
 
-VERSION="v0.9.4"
+VERSION="v0.9.5"
 [ "$(id -u)" -eq 0 ] && err "No ejecutes el script como root (los archivos quedarian en /root)."
 command -v sudo >/dev/null || err "Falta sudo: agrega tu usuario a sudoers con visudo."
 command -v git  >/dev/null || err "Falta git: instalalo primero."
@@ -61,7 +61,7 @@ if [ "$FAMILIA" = "void" ]; then
     PKGMAN(){ sudo xbps-install -Sy "$@"; }
     PKGHAS(){ xbps-query "$1" >/dev/null 2>&1; }
     PKGREM(){ sudo xbps-remove -R "$@"; }
-    GREETD_VT="${GREETD_VT:-7}"
+    GREETD_VT="${GREETD_VT:-1}"
     SEAT_GRP="_seatd"
     GREETER_USR="_greeter"
     NEED_TURNSTILE=1
@@ -288,6 +288,29 @@ getent group video >/dev/null && sudo usermod -aG video "$REAL_USER"
 warn "Los grupos ($SEAT_GRP, video) se aplican al reiniciar sesion."
 
 detectar_gpus || warn "Deteccion de GPUs fallo, sigo."
+
+# Opcion de kernel nuevo (solo en Void)
+if [ "$FAMILIA" = "void" ]; then
+  info "Kernel actual: $(uname -r)"
+  # Buscar ultimo kernel de la serie 7.x en repositorios
+  KVER=$(xbps-query --regex -Rs '^linux[0-9]+\.[0-9]+' 2>/dev/null | awk '{print $2}' | grep -E '^linux[0-9]+\.[0-9]+-[0-9]+\.[0-9]+' | sort -V | tail -n1)
+  KPKG=$(printf '%s' "$KVER" | sed 's/-[0-9]\..*$//')
+  if [ -n "$KPKG" ]; then
+    printf "Kernel mas nuevo disponible: %s\n" "$KPKG"
+    printf "Que kernel quieres usar?\n"
+    printf "  1) Conservar el kernel actual\n"
+    printf "  2) Instalar $KPKG (recomendado para mejor soporte Wayland)\n"
+    printf "Opcion [2]: "; read -r OK; OK="${OK:-2}"
+    if [ "$OK" = "2" ]; then
+      info "Instalando $KPKG..."
+      sudo xbps-install -Sy "$KPKG" || warn "No se pudo instalar el kernel nuevo."
+    else
+      info "Se conserva el kernel actual."
+    fi
+  else
+    warn "No se encontro un kernel nuevo en los repositorios."
+  fi
+fi
 
 # Zona horaria
 printf "Pais (vacio = Colombia): "; read -r P; P="${P:-Colombia}"
