@@ -71,7 +71,7 @@ Lo necesitas para clonar el repositorio. El propio instalador también instala `
 # Void
 sudo xbps-install -S git
 # Arch
-sudo pacman -S git nano (habilita multilib con sudo nano /etc/pacman.conf y elimina # en multilib) 
+sudo pacman -S git nano (habilita multilib con sudo nano /etc/pacman.conf y elimina) 
 ```
 
 ### 1. Clonar el repositorio
