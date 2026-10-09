@@ -6,7 +6,7 @@
 > - La rama de **Arch** todavía no tiene una prueba completa en una máquina real: si algo falla, mira [🩺 Si algo falla](#-si-algo-falla).
 > - Se recomiendan **20 GB libres** para evitar errores de almacenamiento.
 
-![Escritorio dwl: barra dwlb con tags 1–9 y estado a la derecha, htop y fastfetch](img/captura-dwl.png)
+<img width="1280" height="800" alt="image" src="https://github.com/user-attachments/assets/cb50ae0b-92ae-415a-9641-f71ed6322a65" />
 
 *Barra superior: tags 1–9 a la izquierda (el activo resaltado) y, a la derecha, CPU, RAM, volumen y hora entre corchetes.*
 
