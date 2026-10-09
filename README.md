@@ -1,14 +1,14 @@
 # dwl-instalador
 
-> ### ⚠️ VERSIÓN 0.9.7 (rev.3) — beta
+> ### VERSIÓN 1.0
 > - **Void Linux** (xbps + runit) y **Arch Linux** (pacman + systemd).
 > - Probado en simulación (repositorios y gestor de paquetes simulados) y en **Void x86_64 (glibc)**, que es la edición recomendada.
 > - La rama de **Arch** todavía no tiene una prueba completa en una máquina real: si algo falla, mira [🩺 Si algo falla](#-si-algo-falla).
 > - Se recomiendan **20 GB libres** para evitar errores de almacenamiento.
 
+![Escritorio dwl: barra dwlb con tags 1–9 y estado a la derecha, htop y fastfetch](img/captura-dwl.png)
 
-<img width="1280" height="800" alt="image" src="https://github.com/user-attachments/assets/e84b9413-7f1a-4b3d-bfcd-f187fa14df44" />
-
+*Barra superior: tags 1–9 a la izquierda (el activo resaltado) y, a la derecha, CPU, RAM, volumen y hora entre corchetes.*
 
 ---
 
@@ -89,7 +89,7 @@ cd dwl-instalador
 ### 3. Darle permisos de ejecución
 
 ```bash
-chmod +x install-dwl-0.9.7.sh
+chmod +x install-dwl-1.0.sh
 ```
 
 ### 4. Ejecutar el instalador
@@ -97,7 +97,7 @@ chmod +x install-dwl-0.9.7.sh
 **Desde una consola que no sea tty1** (por ejemplo `Ctrl` + `Alt` + `F2`, o una terminal dentro de tu escritorio actual). Si lo lanzas desde tty1, el script no toca esa consola en caliente y programa el cambio para el reinicio.
 
 ```bash
-./install-dwl-0.9.7.sh
+./install-dwl-1.0.sh
 ```
 
 > Si tu copia del archivo tiene otro nombre, usa ese nombre en los pasos 3 y 4.
