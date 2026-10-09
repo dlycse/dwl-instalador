@@ -335,6 +335,9 @@ else
 fi
 # 3) Lanzador en Super+D (dwl trae Super+P)
 apply_patch "lanzador Super+D" 's/XKB_KEY_p,\(.*\)menucmd/XKB_KEY_d,\1menucmd/'
+# 3b) Lanzador mas legible: wmenu a 14 pt (por defecto 10)
+apply_patch "lanzador wmenu 14 pt" \
+  's/static const char \*menucmd\[\] = { "wmenu-run", NULL };/static const char *menucmd[] = { "wmenu-run", "-f", "monospace 14", NULL };/'
 # 4) Terminal en Super+Enter (dwl trae Super+Shift+Enter)
 apply_patch "terminal Super+Enter" \
   's/MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_Return,\(.*\)/MODKEY,                    XKB_KEY_Return,\1/'
@@ -463,7 +466,7 @@ cat > "$REAL_HOME/.config/dwlb/config" <<EOF
 -font "JetBrainsMono Nerd Font:size=$DWLB_FONT_SIZE"
 -vertical-padding 6
 -no-bottom
--tags 9         
+-tags 9 1 2 3 4 5 6 7 8 9
 -active-fg-color 1a1b26
 -active-bg-color 7dcfff
 -occupied-fg-color c0caf5
@@ -617,10 +620,20 @@ ok "Scripts de barra: dwlb-toggle (Super+W) y dwlb-flip (Super+Shift+W)"
 
 # ---------- Wallpaper por defecto ----------
 sudo -u "$REAL_USER" mkdir -p "$REAL_HOME/Pictures"
-if [ ! -f "$REAL_HOME/Pictures/wallpaper.jpg" ]; then
+# Se descarga si no hay fondo, o si el que hay lo puso este instalador antes
+# (marca .wallpaper-instalador). Un fondo que tu copiaste a mano no se toca.
+WALL="$REAL_HOME/Pictures/wallpaper.jpg"
+WALL_MARK="$REAL_HOME/Pictures/.wallpaper-instalador"
+if [ ! -f "$WALL" ] || [ -f "$WALL_MARK" ]; then
   info "Descargando wallpaper por defecto..."
-  curl -fsSL --max-time 20 -o "$REAL_HOME/Pictures/wallpaper.jpg" https://wallpapercave.com/download/empty-error-wallpapers-wp8330753 || warn "Sin wallpaper: copia uno manual a ~/Pictures/wallpaper.jpg"
-  sudo chown "$REAL_USER:$REAL_USER" "$REAL_HOME/Pictures/wallpaper.jpg" 2>/dev/null
+  if curl -fsSL --max-time 60 -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" -e "https://wallpaperaccess.com/" -o "$WALL.tmp" "https://wallpaperaccess.com/download/anime-4k-laptop-8523463" 2>/dev/null && [ -s "$WALL.tmp" ]; then
+    mv -f "$WALL.tmp" "$WALL"
+    sudo -u "$REAL_USER" touch "$WALL_MARK"
+  else
+    rm -f "$WALL.tmp"
+    warn "Sin wallpaper: copia uno manual a ~/Pictures/wallpaper.jpg"
+  fi
+  sudo chown "$REAL_USER:$REAL_USER" "$WALL" "$WALL_MARK" 2>/dev/null
 fi
 
 hdr "CHULETA DE ATAJOS"
