@@ -1,11 +1,11 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v0.9.7 — Wayland con dwl + dwlb (Void + Arch)
-# ------------------------------------------------------------
+# install-dwl v1.0 — Wayland con dwl + dwlb (Void + Arch)
+# ============================================================
 set +e
 
-VERSION="0.9.7"
-BUILD="rev.3 (anti wlroots-fantasma + anti tty1-kill)"
+VERSION="1.0"
+BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
 # sudo con red de seguridad: si algo se cuelga (p.ej. pidiendo password),
@@ -404,6 +404,16 @@ if curl -fsSL https://codeberg.org/dwl/dwl-patches/raw/branch/main/patches/ipc/i
       sed -i '/^static Monitor \*dirtomon(enum wlr_direction dir);$/r /tmp/dwl-ipc-protos.txt' dwl.c
       rm -f dwl.c.rej
     fi
+  fi
+  if [ -f dwl.c ] && grep -q 'dwl_ipc_manager_bind' dwl.c; then
+    # El parche original llama a focusclient() con 2 argumentos; dwl main usa 3 (c, layersurface, lift)
+    sed -i 's/focusclient(focustop(monitor), 1);/focusclient(focustop(monitor), NULL, 1);/' dwl.c
+    # El parche original crea el global IPC dos veces: se deja solo la primera
+    awk '/wl_global_create\(dpy, &zdwl_ipc_manager_v2_interface/ { if (seen++) next } { print }' dwl.c > /tmp/dwl-ipc-dwl.c && mv /tmp/dwl-ipc-dwl.c dwl.c
+    # El XML del parche trae un evento focused_geometry (indice 10) que dwlb (main) no conoce:
+    # dwlb falla con "has no event 10". Se quita del XML y del envio en dwl.c
+    sed -i '/<event name="focused_geometry"/,/<\/event>/d' protocols/dwl-ipc-unstable-v2.xml
+    perl -0pi -e 's/\tif \(wl_resource_get_version\(ipc_output->resource\) >= ZDWL_IPC_OUTPUT_V2_FULLSCREEN_SINCE_VERSION\) \{\n\t\tzdwl_ipc_output_v2_send_focused_geometry\(.*?\);\n\t\}\n//s' dwl.c
   fi
   if [ ! -f dwl.c.rej ] && grep -q 'dwl_ipc_manager_bind' dwl.c && [ -f protocols/dwl-ipc-unstable-v2.xml ]; then
     IPC_OK=1
