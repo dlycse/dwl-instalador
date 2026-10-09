@@ -7,7 +7,7 @@
 > - Se recomiendan **20 GB libres** para evitar errores de almacenamiento.
 
 
-<img width="1280" height="800" alt="image" src="https://github.com/user-attachments/assets/5b92e91a-b35f-4d8f-a58c-668cc417b7ae" />
+<img width="1280" height="800" alt="image" src="https://github.com/user-attachments/assets/e84b9413-7f1a-4b3d-bfcd-f187fa14df44" />
 
 
 ---
