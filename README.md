@@ -1,6 +1,24 @@
 # dwl-instalador
 
-Instalador de **dwl** (el equivalente a *dwm*, pero para **Wayland**), ya preconfigurado, para **Void Linux** y **Arch Linux**.
+## About
+
+**dwl-instalador** instala y configura [dwl](https://codeberg.org/dwl/dwl) de una sola vez, ya listo para usar.
+
+**¿Qué es dwl?** Un compositor para **Wayland**, parecido a *dwm*: las ventanas se acomodan en mosaico y se organizan en escritorios (tags), todo desde el teclado.
+
+**¿Qué hace el instalador?**
+
+- Instala dwl, la barra **dwlb** y las herramientas básicas: terminal, lanzador, gestor de archivos, audio y capturas de pantalla.
+- Compila dwl y dwlb desde su código fuente. dwl lleva el **parche IPC** de dwl-patches para que la barra marque el tag activo; si el parche no se puede aplicar, dwl se compila sin él.
+- Deja la configuración lista: atajos con la tecla **Super**, teclado, zona horaria y una chuleta de atajos en `~/Atajos.txt`.
+- Configura el inicio de sesión con **greetd + tuigreet**.
+
+**Distribuciones compatibles:**
+
+- **Void Linux** (x86_64 con glibc): la recomendada, y para la que está pensado.
+- **Arch Linux**: soportado, pero todavía en prueba.
+
+**Lo que no hace:** no instala drivers de GPU ni Steam. Eso se hace aparte (ver [Steam y drivers](#-steam-y-drivers-opcional)).
 
 > ### ⚠️ VERSIÓN 0.9.7 (rev.3) — beta
 > - **Void Linux** (xbps + runit) y **Arch Linux** (pacman + systemd).
@@ -8,7 +26,9 @@ Instalador de **dwl** (el equivalente a *dwm*, pero para **Wayland**), ya precon
 > - La rama de **Arch** todavía no tiene una prueba completa en una máquina real: si algo falla, mira [🩺 Si algo falla](#-si-algo-falla).
 > - Se recomiendan **20 GB libres** para evitar errores de almacenamiento.
 
-<img width="1600" height="900" alt="Captura del escritorio dwl con la barra dwlb" src="https://github.com/user-attachments/assets/64108d84-8e2a-4731-8a71-3136811234e4" />
+![Escritorio dwl: barra dwlb con tags 1–9 y estado a la derecha, htop y fastfetch](img/captura-dwl.png)
+
+*Barra superior: tags 1–9 a la izquierda (el activo resaltado) y, a la derecha, CPU, RAM, volumen y hora entre corchetes.*
 
 ---
 
@@ -18,7 +38,7 @@ Instalador de **dwl** (el equivalente a *dwm*, pero para **Wayland**), ya precon
 |---|---|
 | **dwl** | El compositor (gestor de ventanas) Wayland |
 | **[dwlb](https://github.com/kolunmi/dwlb)** | La **barra** superior (tags, layout, estado) — autor: *kolunmi* |
-| **foot** | Emulador de terminal |
+| **foot** | Emulador de terminal, con fondo transparente (alfa 0.75) |
 | **wmenu** | Lanzador de aplicaciones (el equivalente a dmenu) |
 | **lf** | Gestor de archivos en la terminal |
 | **swaybg** | Fondo de pantalla |
@@ -37,7 +57,7 @@ Además deja listo:
 - Atajos de teclado con **Super** como tecla principal (en dwl por defecto es Alt).
 - Los comandos `dwl-rebuild` y `dwlb-rebuild`, para recompilar sin entrar a las carpetas.
 - `~/Atajos.txt` con la chuleta completa, en texto plano para leerla con `nano`.
-- Un fondo de pantalla por defecto en `~/Pictures/wallpaper.jpg` si no tienes uno.
+- Un fondo de pantalla por defecto en `~/Pictures/wallpaper.jpg` (anime 4K). Si ya tienes un fondo propio, el instalador no lo toca; el que puso una instalación anterior sí se reemplaza.
 - Desactiva otros gestores de sesión si los hay (**lightdm, gdm, sddm, xdm, lxdm**). Se **desactivan**, no se desinstalan.
 
 **No instala drivers de GPU ni Steam.** Eso lo eliges tú aparte, en un comando (ver [Steam y drivers](#-steam-y-drivers-opcional)).
@@ -238,8 +258,9 @@ La tecla **Super** es la de Windows (⌘ en teclados de Mac). Lista completa en 
 
 | Archivo | Qué cambia | Cómo se aplica |
 |---|---|---|
-| `~/dwl/config.h` | **Atajos**, colores, reglas de ventanas, teclado | `dwl-rebuild` (= `cd ~/dwl && sudo make clean install`) |
-| `~/.config/dwlb/config` | Fuente y colores de la **barra** | Solo reinicia la sesión (no recompila) |
+| `~/dwl/config.h` | **Atajos**, colores, reglas de ventanas, teclado | `cd ~/dwl && sudo make clean install` |
+| `~/.config/dwlb/config` | Fuente, colores y tags (1–9) de la **barra** (una opción por línea) | Solo reinicia la sesión (no recompila) |
+| `~/.config/foot/foot.ini` | Colores y transparencia de la **terminal** (si ya existía, se guarda como `foot.ini.bak`) | Solo abre una terminal nueva |
 | `/usr/local/bin/dwlb-status` | Los bloques de estado de la barra (CPU, RAM, batería, volumen) | Solo reinicia la sesión |
 | `~/dwlb/config.h` | Valores compilados de dwlb | `dwlb-rebuild` |
 | `~/.config/lf/lfrc` | Gestor de archivos `lf` | Al reabrir `lf` |
@@ -250,12 +271,12 @@ La tecla **Super** es la de Windows (⌘ en teclados de Mac). Lista completa en 
 
 ```bash
 nano ~/dwl/config.h           # 1. edita la tecla
-dwl-rebuild                   # 2. recompila e instala
+cd ~/dwl && sudo make clean install   # 2. recompila e instala
 # 3. Super + Shift + E para salir y vuelve a entrar
 ```
 
-> `dwl-rebuild` y `dwlb-rebuild` son los dos comandos que deja el instalador, para no tener que
-> entrar a `~/dwl` o `~/dwlb` cada vez.
+> Para dwl, el comando es `cd ~/dwl && sudo make clean install`. Para dwlb, usa `dwlb-rebuild`
+> (deja el instalador), que hace lo mismo desde `~/dwlb`.
 
 ### Cambiar el fondo de pantalla
 
@@ -285,7 +306,7 @@ cp /ruta/de/mi-fondo.png ~/Pictures/wallpaper.jpg
 | Falla al instalar los paquetes en **musl** o **aarch64** (Void) | Esos sistemas **no tienen** repositorio multilib: el instalador ya lo tiene en cuenta; si aun así falla, quita `void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree` de la línea de `xbps-install` y vuelve a ejecutarlo |
 | `steam` no aparece en XBPS | Resincroniza (`sudo xbps-install -Sy`) y comprueba los repos con `xbps-query -Rs steam` |
 | El audio no va | Void `sudo sv status seatd pipewire` · Arch `systemctl --user status pipewire wireplumber`, y reinicia la sesión |
-| Los clics en los tags de la barra no funcionan | La barra se lanza con `-no-ipc`. Usa `Super` + `1`…`9` |
+| La barra no marca el tag activo ni `[]=` | El parche IPC de dwl no se aplicó o no compiló (mira el aviso al instalar). Sin él, la barra usa `-no-ipc` y los clics en los tags no funcionan. Usa `Super` + `1`…`9` |
 
 ---
 
