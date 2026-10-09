@@ -1,25 +1,5 @@
 # dwl-instalador
 
-## About
-
-**dwl-instalador** instala y configura [dwl](https://codeberg.org/dwl/dwl) de una sola vez, ya listo para usar.
-
-**¿Qué es dwl?** Un compositor para **Wayland**, parecido a *dwm*: las ventanas se acomodan en mosaico y se organizan en escritorios (tags), todo desde el teclado.
-
-**¿Qué hace el instalador?**
-
-- Instala dwl, la barra **dwlb** y las herramientas básicas: terminal, lanzador, gestor de archivos, audio y capturas de pantalla.
-- Compila dwl y dwlb desde su código fuente. dwl lleva el **parche IPC** de dwl-patches para que la barra marque el tag activo; si el parche no se puede aplicar, dwl se compila sin él.
-- Deja la configuración lista: atajos con la tecla **Super**, teclado, zona horaria y una chuleta de atajos en `~/Atajos.txt`.
-- Configura el inicio de sesión con **greetd + tuigreet**.
-
-**Distribuciones compatibles:**
-
-- **Void Linux** (x86_64 con glibc): la recomendada, y para la que está pensado.
-- **Arch Linux**: soportado, pero todavía en prueba.
-
-**Lo que no hace:** no instala drivers de GPU ni Steam. Eso se hace aparte (ver [Steam y drivers](#-steam-y-drivers-opcional)).
-
 > ### ⚠️ VERSIÓN 0.9.7 (rev.3) — beta
 > - **Void Linux** (xbps + runit) y **Arch Linux** (pacman + systemd).
 > - Probado en simulación (repositorios y gestor de paquetes simulados) y en **Void x86_64 (glibc)**, que es la edición recomendada.
