@@ -35,9 +35,8 @@ Además deja listo:
 - La **zona horaria** (`/etc/localtime`, `TIMEZONE` en Void, y `chronyd` para la hora).
 - El **teclado**, tanto en la consola (`KEYMAP`) como en dwl.
 - Atajos de teclado con **Super** como tecla principal (en dwl por defecto es Alt).
-- Los comandos `dwl-rebuild` y `dwlb-rebuild`, para recompilar sin entrar a las carpetas.
-- `~/Atajos.txt` con la chuleta completa, en texto plano para leerla con `nano`.
-- Un fondo de pantalla por defecto en `~/Pictures/wallpaper.jpg` (anime 4K). Si ya tienes un fondo propio, el instalador no lo toca; el que puso una instalación anterior sí se reemplaza.
+- `~/Atajos.txt` con los atajos completos, en texto plano para leerla con `nano`.
+- Un fondo de pantalla por defecto en `~/Pictures/wallpaper.jpg` (anime 4K), si quieres poner uno nuevo descargalo muevelo a `~/Pictures` y cambiale el nombre a wallpaper.jpg y elimina el del script. Si ya tienes un fondo propio, el instalador no lo toca.
 - Desactiva otros gestores de sesión si los hay (**lightdm, gdm, sddm, xdm, lxdm**). Se **desactivan**, no se desinstalan.
 
 **No instala drivers de GPU ni Steam.** Eso lo eliges tú aparte, en un comando (ver [Steam y drivers](#-steam-y-drivers-opcional)).
