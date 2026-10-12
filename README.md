@@ -88,7 +88,7 @@ cd dwl-instalador
 ### 3. Darle permisos de ejecución
 
 ```bash
-chmod +x install-dwl-1.0.sh
+chmod +x install-dwl.sh
 ```
 
 ### 4. Ejecutar el instalador
@@ -96,7 +96,7 @@ chmod +x install-dwl-1.0.sh
 **Desde una consola que no sea tty1** (por ejemplo `Ctrl` + `Alt` + `F2`, o una terminal dentro de tu escritorio actual). Si lo lanzas desde tty1, el script no toca esa consola en caliente y programa el cambio para el reinicio.
 
 ```bash
-./install-dwl-1.0.sh
+./install-dwl.sh
 ```
 
 > Si tu copia del archivo tiene otro nombre, usa ese nombre en los pasos 3 y 4.
