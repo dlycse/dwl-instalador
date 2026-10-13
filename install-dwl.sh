@@ -1079,6 +1079,6 @@ echo "          Super+q cerrar          Super+w barra on/off"
 echo "          Super+Shift+e salir de sesion"
 line
 [ "${FINAL_ERROR:-0}" -eq 1 ] && err "Revisa los errores de arriba antes de reiniciar."
-ok "Instalacion v$VERSION completada. Realiza ${B}sudo reboot${R} para cargar todo sin problema."
+ok "Instalacion v$VERSION completada. Realiza sudo reboot para cargar todo sin problema."
 rm -rf ~/dwl-instalador
 exit 0
