@@ -1,6 +1,6 @@
 # dwl-instalador
 
-> ### VERSIÓN 1.0
+> ### VERSIÓN 1.0.2
 > - **Void Linux** (xbps + runit), **Arch Linux** (pacman + systemd) y **Fedora 44 o superior** (dnf + systemd).
 > - **Fedora:** dwl necesita wlroots 0.20, que Fedora trae desde la 44. En Fedora 43 el instalador se detiene al inicio.
 > - Probado en simulación (repositorios y gestor de paquetes simulados) y en **Void x86_64 (glibc)**, que es la edición recomendada.
