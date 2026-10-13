@@ -1,8 +1,10 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.5 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
+# install-dwl v1.0.6 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
 # REGLA DE VERSIONES: cada funcion nueva o problema resuelto sube 0.01
 # (1.0.5 -> 1.0.6 -> 1.0.7 ...). Al subir, cambia VERSION abajo y este encabezado.
+# VERSION 1.0.6: si ya hay un gestor de sesion (lightdm, gdm, sddm...), pregunta
+#   si se cambia a greetd + tuigreet o se conserva (por defecto se conserva).
 # VERSION 1.0.5: barra con el tag activo marcado (parche IPC de dwl, corregido:
 #   focusclient() con 3 argumentos, global IPC sin duplicar y sin el evento
 #   focused_geometry que dwlb no conoce). Ver el bloque "Parche IPC" mas abajo.
@@ -71,7 +73,7 @@
 # ============================================================
 set +e
 
-VERSION="1.0.5"
+VERSION="1.0.6"
 BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -257,6 +259,29 @@ if [ -n "$TZONE" ] && [ -f "/usr/share/zoneinfo/$TZONE" ]; then
   ok "Zona horaria: $TZONE"
 else
   warn "No encontre la zona '$TZIN'; se deja la que ya tenias"
+fi
+
+# ---------- Gestor de sesion ya instalado (lightdm, gdm, sddm...) ----------
+# Si ya hay uno, se pregunta: cambiarlo a greetd + tuigreet, o dejar el que hay
+# (dwl aparece en su menu de sesion). Por defecto (Enter) se deja el que hay.
+DM_FOUND=""
+for DM in lightdm gdm gdm3 sddm xdm lxdm; do
+  if [ -L "/var/service/$DM" ] || [ -f "/usr/lib/systemd/system/$DM.service" ] || command -v "$DM" >/dev/null 2>&1; then
+    DM_FOUND="$DM_FOUND $DM"
+  fi
+done
+DM_FOUND="${DM_FOUND# }"
+USE_GREETD=1
+if [ -n "$DM_FOUND" ]; then
+  echo
+  warn "Ya tienes un gestor de sesion instalado: $DM_FOUND"
+  if confirm "Cambiarlo a greetd + tuigreet? (N = dejar $DM_FOUND y elegir dwl en su menu)"; then
+    USE_GREETD=1
+    info "Se cambiara a greetd + tuigreet (el otro gestor se desactiva, no se desinstala)."
+  else
+    USE_GREETD=0
+    ok "Se mantiene $DM_FOUND. greetd no se configura."
+  fi
 fi
 
 # ---------- wlroots desde fuente (solo si la distro no trae 0.20.x en sus repos) ----------
@@ -1145,6 +1170,7 @@ else
   info "Sin sesion en tty1 (${CUR_TTY:-sin tty}): greetd se puede arrancar ahora mismo."
 fi
 
+if [ "$USE_GREETD" = 1 ]; then
 # --- 0c) Quitar otros gestores de sesion (lightdm, gdm, sddm...) ---
 # Si hay sesion en marcha NO se paran: matarian la sesion. En ese caso
 # lo hace el helper dwl-enable-greetd en el apagado/arranque.
@@ -1392,12 +1418,20 @@ INI
     fi
   fi
 fi
+else
+  # El usuario eligio mantener su gestor: no se toca greetd ni los gestores actuales
+  info "Gestor conservado: $DM_FOUND. Tu sesion dwl aparece en su menu de sesion."
+fi
 
 # --- 9) Resumen final ---
 hdr "INSTALACION COMPLETA"
 printf "\n  %sUNICO PASO RESTANTE:%s\n\n" "$YEL$B" "$R"
 printf "      %s%ssudo reboot%s\n\n" "$B" "$YEL" "$R"
-if [ "${DEFERRED:-0}" -eq 1 ]; then
+if [ "$USE_GREETD" = 0 ]; then
+  echo " Mantienes tu gestor de sesion ($DM_FOUND): greetd no se ha tocado."
+  echo " Al reiniciar entra con ese gestor y elige 'dwl' en el menu de sesion."
+  echo
+elif [ "${DEFERRED:-0}" -eq 1 ]; then
   echo " Modo seguro (estabas dentro de una sesion):"
   echo "   * NO se ha tocado agetty ni /var/service para no matar tu sesion."
   echo "   * El cambio se aplica SOLO: al apagar (/etc/rc.shutdown) y,"
@@ -1412,6 +1446,7 @@ else
   echo " greetd ya esta habilitado y verificado."
   echo " Tras reiniciar veras tuigreet directamente en tty1."
 fi
+if [ "$USE_GREETD" = 1 ]; then
 echo " Inicia sesion con tu usuario y entras a dwl."
 echo
 echo " Si NO aparece tuigreet tras el reboot:"
@@ -1422,11 +1457,12 @@ echo "   Arch, Fedora y Debian:  systemctl status greetd"
 echo "          journalctl -u greetd -b"
 echo "   (recuerda: tty2..tty6 siguen con agetty, entra por ahi)"
 echo
+fi
 echo " Atajos:  Super+Enter terminal    Super+d menu"
 echo "          Super+q cerrar          Super+w barra on/off"
 echo "          Super+Shift+e salir de sesion"
 line
 [ "${FINAL_ERROR:-0}" -eq 1 ] && err "Revisa los errores de arriba antes de reiniciar."
 ok "Instalacion v$VERSION completada. Realiza ${B}sudo reboot${R} para cargar todo sin problema."
-rm -rf ~/dwl-instalador
+rm -rf ~/dwl-instalador 
 exit 0
