@@ -81,9 +81,9 @@ srun(){ if [ -n "$TIMEOUT_BIN" ]; then "$TIMEOUT_BIN" 25 sudo "$@"; else sudo "$
 # Colores 24-bit solo si la salida es una terminal (en logs/tuberias, texto plano).
 if [ -t 1 ]; then
   ESC="$(printf '\033')"
-  R="$ESC[0m"; B="$ESC[1m"; DIM="$ESC[2m"
-  RED="$ESC[38;2;255;45;61m"; CYAN="$ESC[38;2;119;226;242m"
-  YEL="$ESC[38;2;255;214;31m"; GRN="$ESC[38;2;90;230;130m"; GREY="$ESC[38;2;120;120;130m"
+  R="${ESC}[0m"; B="${ESC}[1m"; DIM="${ESC}[2m"
+  RED="${ESC}[38;2;255;45;61m"; CYAN="${ESC}[38;2;119;226;242m"
+  YEL="${ESC}[38;2;255;214;31m"; GRN="${ESC}[38;2;90;230;130m"; GREY="${ESC}[38;2;120;120;130m"
 else
   R=""; B=""; DIM=""; RED=""; CYAN=""; YEL=""; GRN=""; GREY=""
 fi
@@ -147,14 +147,28 @@ case "${ID:-unknown}" in
   void) FAMILIA="void" ;;
   arch|manjaro|endeavouros|garuda|artix|archcraft|cachyos|arcolinux|parabola) FAMILIA="arch" ;;
   fedora) FAMILIA="fedora" ;;
-  *) case "${ID_LIKE:-}" in *arch*) FAMILIA="arch" ;; *void*) FAMILIA="void" ;; esac ;;
+  devuan) err "Devuan usa sysvinit, no systemd: este instalador no es compatible." ;;
+  debian|ubuntu|linuxmint|pop|zorin|elementary|kali|raspbian|neon|mx) FAMILIA="debian" ;;
+  *) case "${ID_LIKE:-}" in *arch*) FAMILIA="arch" ;; *void*) FAMILIA="void" ;; *debian*|*ubuntu*) FAMILIA="debian" ;; esac ;;
 esac
-[ "$FAMILIA" = "unknown" ] && err "Solo compatible con Void Linux, Arch Linux y Fedora."
+[ "$FAMILIA" = "unknown" ] && err "Solo compatible con Void Linux, Arch Linux, Fedora y Debian/Ubuntu (y derivadas)."
 info "Distro detectada: ${ID:-unknown} (familia: $FAMILIA)"
 # Fedora 44+ trae wlroots 0.20 (lo que pide dwl); Fedora 43 trae 0.19 y dwl no compila.
 # Si VERSION_ID no es numerico (p. ej. rawhide), no se bloquea.
 if [ "$FAMILIA" = "fedora" ] && [ "${VERSION_ID:-0}" -lt 44 ] 2>/dev/null; then
   err "Fedora ${VERSION_ID} trae wlroots 0.19 y dwl necesita wlroots 0.20: usa Fedora 44 o superior."
+fi
+# Debian y derivadas: la version NO se decide por el numero, sino por lo que
+# hay en los repos (apt-cache). Debian 13 trae wlroots 0.18 y Ubuntu 26.04 0.19;
+# Debian testing (forky) y Ubuntu 26.10 traen 0.20. Se comprueba antes de instalar nada.
+if [ "$FAMILIA" = "debian" ]; then
+  [ -d /run/systemd/system ] || err "Este instalador necesita systemd (tu sistema no lo usa)."
+  info "Actualizando indice de APT..."
+  sudo apt-get update -qq >/dev/null 2>&1 || warn "apt-get update reporto errores (revisa la red)"
+  if ! apt-cache show libwlroots-0.20-dev >/dev/null 2>&1; then
+    err "Tus repositorios no traen wlroots 0.20 (dwl lo necesita). Debian 13 trae 0.18 y Ubuntu 26.04 trae 0.19: usa Debian testing (forky) o Ubuntu 26.10 o superior."
+  fi
+  ok "wlroots 0.20 disponible en tus repositorios"
 fi
 
 # ---------- Espacio libre ----------
@@ -225,6 +239,27 @@ if [ -n "$TZONE" ] && [ -f "/usr/share/zoneinfo/$TZONE" ]; then
 else
   warn "No encontre la zona '$TZIN'; se deja la que ya tenias"
 fi
+
+# Nerd Font para Fedora y Debian: ninguna la empaqueta; se baja la release
+# oficial de Nerd Fonts a ~/.local/share/fonts (sin tocarla si ya existe).
+nerd_font_github(){
+  NF_DIR="$REAL_HOME/.local/share/fonts/JetBrainsMonoNerd"
+  if fc-list 2>/dev/null | grep -qi "JetBrainsMono Nerd"; then
+    ok "JetBrainsMono Nerd Font ya instalada"
+    return 0
+  fi
+  info "Descargando JetBrainsMono Nerd Font..."
+  if curl -fsSL --max-time 180 -o /tmp/JetBrainsMono-nf.zip \
+       "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip" \
+     && sudo -u "$REAL_USER" mkdir -p "$NF_DIR" \
+     && sudo -u "$REAL_USER" unzip -oq /tmp/JetBrainsMono-nf.zip -d "$NF_DIR"; then
+    sudo -u "$REAL_USER" fc-cache -f "$NF_DIR" >/dev/null 2>&1
+    ok "JetBrainsMono Nerd Font instalada en $NF_DIR"
+  else
+    warn "No pude instalar la Nerd Font: la barra usara una fuente de respaldo"
+  fi
+  rm -f /tmp/JetBrainsMono-nf.zip
+}
 
 if [ "$FAMILIA" = "void" ]; then
   hdr "PAQUETES - VOID LINUX"
@@ -298,7 +333,7 @@ elif [ "$FAMILIA" = "fedora" ]; then
   # son los que pide dwlb; greetd y tuigreet estan en los repos oficiales.
   # 'lf' no se encontro en la web de Fedora: si no esta, se avisa abajo.
   info "Instalando paquetes para Fedora..."
-  FEDORA_PKGS="gcc make pkgconf-pkg-config git curl unzip fontconfig procps-ng nano pciutils
+  FEDORA_PKGS="gcc make pkgconf-pkg-config git curl unzip fontconfig procps-ng nano pciutils patch perl-interpreter
     wayland-devel wayland-protocols-devel libxkbcommon-devel libinput-devel libseat-devel seatd
     xorg-x11-server-Xwayland mesa-dri-drivers libdrm-devel pango-devel cairo-devel pixman-devel
     libgudev-devel fcft-devel tllist-devel wlroots-devel
@@ -314,23 +349,7 @@ elif [ "$FAMILIA" = "fedora" ]; then
     rpm -q "$p" >/dev/null 2>&1 || warn "No se instalo: $p (instalalo a mano o desde un COPR)"
   done
 
-  # Nerd Font: Fedora no la empaqueta; se baja la release oficial de Nerd Fonts
-  NF_DIR="$REAL_HOME/.local/share/fonts/JetBrainsMonoNerd"
-  if fc-list 2>/dev/null | grep -qi "JetBrainsMono Nerd"; then
-    ok "JetBrainsMono Nerd Font ya instalada"
-  else
-    info "Descargando JetBrainsMono Nerd Font..."
-    if curl -fsSL --max-time 180 -o /tmp/JetBrainsMono-nf.zip \
-         "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip" \
-       && sudo -u "$REAL_USER" mkdir -p "$NF_DIR" \
-       && sudo -u "$REAL_USER" unzip -oq /tmp/JetBrainsMono-nf.zip -d "$NF_DIR"; then
-      sudo -u "$REAL_USER" fc-cache -f "$NF_DIR" >/dev/null 2>&1
-      ok "JetBrainsMono Nerd Font instalada en $NF_DIR"
-    else
-      warn "No pude instalar la Nerd Font: la barra usara una fuente de respaldo"
-    fi
-    rm -f /tmp/JetBrainsMono-nf.zip
-  fi
+  nerd_font_github
 
   sudo systemctl enable --now seatd.service 2>/dev/null || true
   sudo systemctl enable --now dbus.service 2>/dev/null || true
@@ -338,6 +357,71 @@ elif [ "$FAMILIA" = "fedora" ]; then
   SEAT_GROUP="seat"
 
   # Keymap de consola
+  if grep -q '^KEYMAP=' /etc/vconsole.conf 2>/dev/null; then
+    sudo sed -i "s|^KEYMAP=.*|KEYMAP=$KB_CONSOLE|" /etc/vconsole.conf
+  else
+    echo "KEYMAP=$KB_CONSOLE" | sudo tee -a /etc/vconsole.conf >/dev/null
+  fi
+  sudo loadkeys "$KB_CONSOLE" 2>/dev/null || true
+
+elif [ "$FAMILIA" = "debian" ]; then
+  hdr "PAQUETES - DEBIAN / UBUNTU"
+  # ==================== DEBIAN Y DERIVADAS (apt + systemd) ====================
+  # Nombres comprobados en los indices de Debian forky/sid y Ubuntu 26.10 (stonking).
+  # libwlroots-0.20-dev es lo que pide dwl; Debian 13 y Ubuntu 26.04 no lo traen
+  # (eso se bloquea antes, en DETECCION DEL SISTEMA).
+  # Firefox: Debian lo da como firefox-esr; Ubuntu solo como snap.
+  # seatd de Debian arranca con 'seatd -g video': el grupo de acceso es 'video'.
+  # greetd corre como usuario _greetd (lo crea el propio paquete).
+  info "Instalando paquetes para Debian/Ubuntu..."
+  DEB_PKGS="build-essential git pkgconf patch perl curl unzip fontconfig procps nano pciutils
+    libwayland-dev wayland-protocols libxkbcommon-dev libinput-dev libseat-dev seatd
+    xwayland libgl1-mesa-dri libdrm-dev libpango1.0-dev libcairo2-dev libpixman-1-dev
+    libgudev-1.0-dev libfcft-dev libtllist-dev libwlroots-0.20-dev
+    foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulse
+    swaybg swaylock grim slurp wl-clipboard brightnessctl lf mpv zathura zathura-pdf-poppler
+    xdg-utils imv chrony firefox-esr btop cowsay dbus-daemon
+    greetd tuigreet fonts-jetbrains-mono"
+  # Solo se piden los paquetes que existen en tu version (apt-cache show)
+  DEB_OK=""; DEB_NO=""
+  for p in $DEB_PKGS; do
+    if apt-cache show "$p" >/dev/null 2>&1; then DEB_OK="$DEB_OK $p"; else DEB_NO="$DEB_NO $p"; fi
+  done
+  [ -n "$DEB_NO" ] && warn "No estan en los repos de tu version, se omiten:$DEB_NO"
+  # 1º intento: todo junto (rapido). Si falla: uno a uno (robusto), como en Arch.
+  # shellcheck disable=SC2086
+  if ! sudo DEBIAN_FRONTEND=noninteractive apt-get install -y $DEB_OK; then
+    warn "apt no pudo instalar todo junto: reintento uno a uno"
+    for p in $DEB_OK; do
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$p" >/dev/null 2>&1 || warn "No se pudo instalar: $p"
+    done
+  fi
+  dpkg -s libwlroots-0.20-dev >/dev/null 2>&1 || err "libwlroots-0.20-dev no se instalo: dwl no puede compilarse sin el."
+  for p in greetd tuigreet libfcft-dev libtllist-dev; do
+    dpkg -s "$p" >/dev/null 2>&1 || warn "No se instalo: $p"
+  done
+
+  # Firefox: si apt no lo trae (Ubuntu), se instala como snap
+  case " $DEB_OK " in
+    *" firefox-esr "*) ;;
+    *) if command -v snap >/dev/null 2>&1; then
+         if snap list firefox >/dev/null 2>&1; then ok "Firefox (snap) ya instalado"
+         else info "Instalando Firefox como snap..."
+              sudo snap install firefox >/dev/null 2>&1 || warn "No se pudo instalar Firefox (snap): Super+B no abrira nada"
+         fi
+       else
+         warn "Sin Firefox en apt ni snap: instalalo a mano (Super+B lo abre)"
+       fi ;;
+  esac
+
+  nerd_font_github
+
+  sudo systemctl enable --now seatd.service 2>/dev/null || true
+  sudo systemctl enable --now dbus.service 2>/dev/null || true
+  GREETER_USER="_greetd"
+  SEAT_GROUP="video"
+
+  # Keymap de consola (systemd lee /etc/vconsole.conf)
   if grep -q '^KEYMAP=' /etc/vconsole.conf 2>/dev/null; then
     sudo sed -i "s|^KEYMAP=.*|KEYMAP=$KB_CONSOLE|" /etc/vconsole.conf
   else
@@ -931,7 +1015,7 @@ fi
 # --- 0c) Quitar otros gestores de sesion (lightdm, gdm, sddm...) ---
 # Si hay sesion en marcha NO se paran: matarian la sesion. En ese caso
 # lo hace el helper dwl-enable-greetd en el apagado/arranque.
-for DM in lightdm gdm sddm xdm lxdm; do
+for DM in lightdm gdm gdm3 sddm xdm lxdm; do
   if [ -L "/var/service/$DM" ] || [ -f "/usr/lib/systemd/system/$DM.service" ] || command -v "$DM" >/dev/null 2>&1; then
     if [ "${IN_SESSION:-0}" -eq 1 ]; then
       warn "Hay $DM instalado: se desactivara al reiniciar (no ahora, para no cortar tu sesion)"
@@ -1144,7 +1228,7 @@ EN
 
 else
 
-  # --- 6b) systemd (Arch) ---
+  # --- 6b) systemd (Arch, Fedora y Debian) ---
   sudo mkdir -p /etc/systemd/system/greetd.service.d
   sudo tee /etc/systemd/system/greetd.service.d/10-wait-ready.conf >/dev/null <<INI
 [Unit]
@@ -1201,7 +1285,7 @@ echo " Si NO aparece tuigreet tras el reboot:"
 echo "   Void:  sudo sv status greetd"
 echo "          sudo tail -n 30 /var/log/greetd/current"
 echo "          sudo /usr/local/sbin/dwl-enable-greetd"
-echo "   Arch:  systemctl status greetd"
+echo "   Arch, Fedora y Debian:  systemctl status greetd"
 echo "          journalctl -u greetd -b"
 echo "   (recuerda: tty2..tty6 siguen con agetty, entra por ahi)"
 echo
