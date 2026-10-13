@@ -519,6 +519,11 @@ fi
 # activos. Si el parche no aplica o no compila, se sigue sin el (la barra
 # arranca con -no-ipc y no marca el tag activo). No detiene la instalacion.
 IPC_OK=0
+# Herramientas que el parche necesita: si falta una, el parche NO se aplica
+# y dwl se compila sin IPC en silencio (pasaba en Fedora sin 'patch').
+for c in patch perl awk sed curl; do
+  command -v "$c" >/dev/null 2>&1 || warn "Falta '$c': el parche IPC no se podra aplicar (instalalo y vuelve a correr el instalador)"
+done
 git checkout -q -- Makefile dwl.c config.def.h 2>/dev/null
 rm -f protocols/dwl-ipc-unstable-v2.xml dwl.c.rej dwl.c.orig
 if curl -fsSL https://codeberg.org/dwl/dwl-patches/raw/branch/main/patches/ipc/ipc.patch -o /tmp/dwl-ipc.patch 2>/dev/null; then
