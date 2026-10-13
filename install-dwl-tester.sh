@@ -1,7 +1,9 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
-# VERSION 1.0: barra con el tag activo marcado (parche IPC de dwl, corregido:
+# install-dwl v1.0.5 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
+# REGLA DE VERSIONES: cada funcion nueva o problema resuelto sube 0.01
+# (1.0.5 -> 1.0.6 -> 1.0.7 ...). Al subir, cambia VERSION abajo y este encabezado.
+# VERSION 1.0.5: barra con el tag activo marcado (parche IPC de dwl, corregido:
 #   focusclient() con 3 argumentos, global IPC sin duplicar y sin el evento
 #   focused_geometry que dwlb no conoce). Ver el bloque "Parche IPC" mas abajo.
 # ------------------------------------------------------------
@@ -69,7 +71,7 @@
 # ============================================================
 set +e
 
-VERSION="1.0"
+VERSION="1.0.5"
 BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
