@@ -1,6 +1,6 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0 — Wayland con dwl + dwlb (Void + Arch + Fedora)
+# install-dwl v1.0 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
 # VERSION 1.0: barra con el tag activo marcado (parche IPC de dwl, corregido:
 #   focusclient() con 3 argumentos, global IPC sin duplicar y sin el evento
 #   focused_geometry que dwlb no conoce). Ver el bloque "Parche IPC" mas abajo.
@@ -153,22 +153,39 @@ case "${ID:-unknown}" in
 esac
 [ "$FAMILIA" = "unknown" ] && err "Solo compatible con Void Linux, Arch Linux, Fedora y Debian/Ubuntu (y derivadas)."
 info "Distro detectada: ${ID:-unknown} (familia: $FAMILIA)"
-# Fedora 44+ trae wlroots 0.20 (lo que pide dwl); Fedora 43 trae 0.19 y dwl no compila.
-# Si VERSION_ID no es numerico (p. ej. rawhide), no se bloquea.
-if [ "$FAMILIA" = "fedora" ] && [ "${VERSION_ID:-0}" -lt 44 ] 2>/dev/null; then
-  err "Fedora ${VERSION_ID} trae wlroots 0.19 y dwl necesita wlroots 0.20: usa Fedora 44 o superior."
-fi
-# Debian y derivadas: la version NO se decide por el numero, sino por lo que
-# hay en los repos (apt-cache). Debian 13 trae wlroots 0.18 y Ubuntu 26.04 0.19;
-# Debian testing (forky) y Ubuntu 26.10 traen 0.20. Se comprueba antes de instalar nada.
+# ---------- wlroots: se busca en los repos de CADA distro ----------
+# dwl necesita la serie wlroots 0.20 (wlroots-0.20). En cada distro se busca
+# primero la 0.20.x mas reciente de sus repos (wlr_repo_check). Si no existe,
+# se compila la 0.20.x mas reciente desde fuente (build_wlroots_fuente).
+# Nunca se fija una version para una distro concreta.
+WLR_SERIE="0.20"
+WLR_MODO=""          # repo = viene de los repos de la distro; fuente = se compila
+WLR_REPO_VER=""
+wlr_repo_check(){
+  WLR_REPO_VER=""
+  case "$FAMILIA" in
+    debian) WLR_REPO_VER="$(apt-cache policy "libwlroots-$WLR_SERIE-dev" 2>/dev/null | awk '/Candidat/{print $2; exit}')" ;;
+    fedora) WLR_REPO_VER="$(dnf list --available wlroots-devel 2>/dev/null | awk '/^wlroots-devel\./{print $2; exit}')" ;;
+    arch)   WLR_REPO_VER="$(pacman -Si "wlroots$WLR_SERIE" 2>/dev/null | awk -F': ' '/^Versi/{print $2; exit}')" ;;
+    void)   WLR_REPO_VER="$(xbps-query -R "wlroots$WLR_SERIE-devel" -p pkgver 2>/dev/null | sed "s/^wlroots$WLR_SERIE-devel-//")" ;;
+  esac
+  case "$WLR_REPO_VER" in
+    "$WLR_SERIE".*) return 0 ;;
+  esac
+  WLR_REPO_VER=""
+  return 1
+}
+# Ultima 0.20.x publicada en el repositorio upstream (tags de wlroots).
+# Si no hay red, se usa 0.20.2 (la ultima comprobada).
+wlr_ultima_tag(){
+  _t="$(git ls-remote --tags --refs https://gitlab.freedesktop.org/wlroots/wlroots.git 2>/dev/null \
+        | sed -n "s|.*refs/tags/\(${WLR_SERIE}\.[0-9][0-9]*\)\$|\1|p" | sort -V | tail -n1)"
+  printf '%s' "${_t:-0.20.2}"
+}
 if [ "$FAMILIA" = "debian" ]; then
   [ -d /run/systemd/system ] || err "Este instalador necesita systemd (tu sistema no lo usa)."
   info "Actualizando indice de APT..."
   sudo apt-get update -qq >/dev/null 2>&1 || warn "apt-get update reporto errores (revisa la red)"
-  if ! apt-cache show libwlroots-0.20-dev >/dev/null 2>&1; then
-    err "Tus repositorios no traen wlroots 0.20 (dwl lo necesita). Debian 13 trae 0.18 y Ubuntu 26.04 trae 0.19: usa Debian testing (forky) o Ubuntu 26.10 o superior."
-  fi
-  ok "wlroots 0.20 disponible en tus repositorios"
 fi
 
 # ---------- Espacio libre ----------
@@ -240,6 +257,62 @@ else
   warn "No encontre la zona '$TZIN'; se deja la que ya tenias"
 fi
 
+# ---------- wlroots desde fuente (solo si la distro no trae 0.20.x en sus repos) ----------
+# wlroots 0.20.x pide wayland >=1.24, libdrm >=2.4.129, pixman >=0.46, xkbcommon >=1.8
+# y wayland-protocols >=1.47. Las distros mas viejas traen versiones mas bajas, asi que
+# cada una se comprueba con pkg-config y solo se compila la que no cumple. Las
+# dependencias van fijadas por tag; wlroots toma la 0.20.x mas reciente (wlr_ultima_tag).
+# Todo va a /usr/local, y PKG_CONFIG_PATH + ld.so.conf lo hacen visible en cualquier distro.
+WLR_SRC_DIR=/tmp/dwl-wlroots-src
+WLR_LOG=/tmp/dwl-wlroots-build.log
+build_meson(){
+  _n="$1"; _u="$2"; _t="$3"; shift 3
+  info "Compilando $_n $_t..."
+  rm -rf "${WLR_SRC_DIR:?}/$_n"
+  git clone -q --depth 1 --branch "$_t" "$_u" "$WLR_SRC_DIR/$_n" >>"$WLR_LOG" 2>&1 || return 1
+  meson setup "$WLR_SRC_DIR/$_n/build" "$WLR_SRC_DIR/$_n" --prefix=/usr/local --buildtype=release "$@" >>"$WLR_LOG" 2>&1 || return 1
+  ninja -C "$WLR_SRC_DIR/$_n/build" >>"$WLR_LOG" 2>&1 || return 1
+  # El registro lo escribe el usuario; sudo solo ejecuta la instalacion
+  # shellcheck disable=SC2024
+  sudo ninja -C "$WLR_SRC_DIR/$_n/build" install >>"$WLR_LOG" 2>&1 || return 1
+  ok "$_n $_t instalado en /usr/local"
+}
+build_wlroots_fuente(){
+  _wt="$1"
+  mkdir -p "$WLR_SRC_DIR"; : > "$WLR_LOG"
+  # Los .pc de /usr/local no estan en el camino de pkg-config de todas las distros
+  PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/local/lib64/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+  export PKG_CONFIG_PATH
+  if ! pkg-config --atleast-version=1.24.0 wayland-server 2>/dev/null; then
+    build_meson wayland https://gitlab.freedesktop.org/wayland/wayland.git 1.26.0 \
+      -Ddocumentation=false -Dtests=false || return 1
+  else ok "wayland $(pkg-config --modversion wayland-server) ya cumple"; fi
+  if ! pkg-config --atleast-version=1.47 wayland-protocols 2>/dev/null; then
+    build_meson wayland-protocols https://gitlab.freedesktop.org/wayland/wayland-protocols.git 1.49 \
+      -Dtests=false || return 1
+  else ok "wayland-protocols $(pkg-config --modversion wayland-protocols) ya cumple"; fi
+  if ! pkg-config --atleast-version=2.4.129 libdrm 2>/dev/null; then
+    build_meson libdrm https://gitlab.freedesktop.org/mesa/drm.git libdrm-2.4.134 \
+      -Dtests=false -Dman-pages=disabled -Dvalgrind=disabled -Dinstall-test-programs=false \
+      -Dintel=disabled -Dradeon=disabled -Damdgpu=disabled -Dnouveau=disabled -Dvmwgfx=disabled \
+      -Dfreedreno=disabled -Dvc4=disabled -Detnaviv=disabled -Dtegra=disabled -Domap=disabled -Dexynos=disabled || return 1
+  else ok "libdrm $(pkg-config --modversion libdrm) ya cumple"; fi
+  if ! pkg-config --atleast-version=0.46.0 pixman-1 2>/dev/null; then
+    build_meson pixman https://gitlab.freedesktop.org/pixman/pixman.git pixman-0.46.4 \
+      -Dtests=disabled -Ddemos=disabled || return 1
+  else ok "pixman $(pkg-config --modversion pixman-1) ya cumple"; fi
+  if ! pkg-config --atleast-version=1.8.0 xkbcommon 2>/dev/null; then
+    build_meson libxkbcommon https://github.com/xkbcommon/libxkbcommon.git xkbcommon-1.13.2 \
+      -Denable-tools=false -Denable-x11=false -Denable-docs=false -Denable-xkbregistry=false -Denable-wayland=false || return 1
+  else ok "xkbcommon $(pkg-config --modversion xkbcommon) ya cumple"; fi
+  build_meson wlroots https://gitlab.freedesktop.org/wlroots/wlroots.git "$_wt" -Dexamples=false || return 1
+  # El enlazador dinamico debe ver /usr/local (las distros no lo incluyen todas)
+  printf '/usr/local/lib\n/usr/local/lib64\n' | sudo tee /etc/ld.so.conf.d/dwl-wlroots.conf >/dev/null
+  sudo ldconfig
+  rm -rf "$WLR_SRC_DIR"
+  return 0
+}
+
 # Nerd Font para Fedora y Debian: ninguna la empaqueta; se baja la release
 # oficial de Nerd Fonts a ~/.local/share/fonts (sin tocarla si ya existe).
 nerd_font_github(){
@@ -275,8 +348,23 @@ if [ "$FAMILIA" = "void" ]; then
     info "Sistema sin multilib (musl/aarch64/i686): se instala sin repos extra"
   fi
 
+  # --- wlroots 0.20.x: la de los repos si existe, si no se compila desde fuente ---
+  sudo xbps-install -S >/dev/null 2>&1 || warn "No se pudo sincronizar el indice de xbps"
+  if wlr_repo_check; then
+    WLR_MODO=repo
+    ok "wlroots $WLR_REPO_VER en los repos (dwl lo usara)"
+    VOID_WLR="wlroots-devel"
+    VOID_BUILD=""
+  else
+    WLR_MODO=fuente
+    warn "Tus repositorios no traen wlroots $WLR_SERIE.x: se compilara la $WLR_SERIE.x mas reciente desde fuente. Tarda varios minutos."
+    VOID_WLR=""
+    # Dependencias de compilacion: las de la plantilla oficial de wlroots0.20 en void-packages
+    VOID_BUILD="meson ninja pkg-config wayland-devel glslang hwids lcms2-devel libgbm-devel libglvnd-devel libseat-devel eudev-libudev-devel libdrm-devel libinput-devel libxkbcommon-devel pixman-devel wayland-protocols vulkan-loader-devel xcb-util-errors-devel xcb-util-wm-devel xcb-util-renderutil-devel libdisplay-info-devel libliftoff-devel libxcb-devel xcb-util-cursor-devel xcb-util-devel xcb-util-image-devel xcb-util-keysyms-devel xcb-util-xrm-devel xorg-server-xwayland"
+  fi
   info "Instalando paquetes base para Void Linux..."
-  sudo xbps-install -Sy base-devel git libinput-devel wayland-devel wayland-protocols libxkbcommon-devel wlroots-devel libseat-devel seatd xorg-server-xwayland mesa-dri libdrm-devel pango-devel cairo-devel pixman-devel libgudev-devel fcft-devel tllist foot wmenu fastfetch pipewire wireplumber alsa-pipewire swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd tuigreet turnstile || err "Fallo instalando paquetes."
+  # shellcheck disable=SC2086
+  sudo xbps-install -Sy base-devel git libinput-devel wayland-devel wayland-protocols libxkbcommon-devel $VOID_WLR $VOID_BUILD libseat-devel seatd xorg-server-xwayland mesa-dri libdrm-devel pango-devel cairo-devel pixman-devel libgudev-devel fcft-devel tllist foot wmenu fastfetch pipewire wireplumber alsa-pipewire swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd tuigreet turnstile || err "Fallo instalando paquetes."
   GREETER_USER="greetd"
   SEAT_GROUP="_seatd"
 
@@ -328,23 +416,38 @@ if [ "$FAMILIA" = "void" ]; then
 elif [ "$FAMILIA" = "fedora" ]; then
   hdr "PAQUETES - FEDORA"
   # ==================== FEDORA (dnf + systemd) ====================
-  # Nombres comprobados en packages.fedoraproject.org (Fedora 43-45):
-  # wlroots-devel 0.20 solo desde Fedora 44; fcft-devel y tllist-devel
-  # son los que pide dwlb; greetd y tuigreet estan en los repos oficiales.
+  # Nombres comprobados en los indices de Fedora 43 y 44 (base y updates):
+  # fcft-devel y tllist-devel son los que pide dwlb; greetd y tuigreet estan
+  # en los repos oficiales. wlroots-devel 0.20 solo viene en Fedora 44 (updates,
+  # 0.20.2); en Fedora 43 solo hay 0.19, asi que se compila (WLR_MODO=fuente).
   # 'lf' no se encontro en la web de Fedora: si no esta, se avisa abajo.
   info "Instalando paquetes para Fedora..."
   FEDORA_PKGS="gcc make pkgconf-pkg-config git curl unzip fontconfig procps-ng nano pciutils patch perl-interpreter
     wayland-devel wayland-protocols-devel libxkbcommon-devel libinput-devel libseat-devel seatd
     xorg-x11-server-Xwayland mesa-dri-drivers libdrm-devel pango-devel cairo-devel pixman-devel
-    libgudev-devel fcft-devel tllist-devel wlroots-devel
+    libgudev-devel fcft-devel tllist-devel
     foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulseaudio
     swaybg swaylock grim slurp wl-clipboard brightnessctl lf mpv zathura zathura-pdf-poppler
     xdg-utils imv chrony firefox btop cowsay dbus-daemon
     greetd greetd-selinux tuigreet jetbrains-mono-fonts"
+  # Sin esto, dnf puede leer una cache vieja y no ver la 0.20.2 de updates
+  sudo dnf -q makecache >/dev/null 2>&1 || warn "dnf makecache reporto errores (revisa la red)"
+  if wlr_repo_check; then
+    WLR_MODO=repo
+    ok "wlroots $WLR_REPO_VER en tus repositorios (dwl lo usara)"
+    FEDORA_PKGS="$FEDORA_PKGS wlroots-devel"
+  else
+    WLR_MODO=fuente
+    warn "Tus repositorios no traen wlroots $WLR_SERIE.x (Fedora 43 trae 0.19): se compilara la $WLR_SERIE.x mas reciente desde fuente. Tarda varios minutos."
+    # Dependencias de compilacion (nombres comprobados en el indice de Fedora 43/44)
+    FEDORA_PKGS="$FEDORA_PKGS meson ninja-build libffi-devel expat-devel systemd-devel libglvnd-devel mesa-libEGL-devel mesa-libgbm-devel vulkan-loader-devel vulkan-headers libxcb-devel xcb-util-wm-devel xcb-util-renderutil-devel xcb-util-image-devel xcb-util-errors-devel xcb-util-cursor-devel xcb-util-keysyms-devel xcb-util-devel xcb-util-xrm-devel libdisplay-info-devel libliftoff-devel hwdata libinput-devel libseat-devel libpciaccess-devel bison flex wayland-devel wayland-protocols-devel libxkbcommon-devel libdrm-devel pixman-devel glslang lcms2-devel"
+  fi
   # --skip-unavailable: un paquete que no existe en tu version no tumba la instalacion
   # shellcheck disable=SC2086
   sudo dnf install -y --skip-unavailable $FEDORA_PKGS || warn "dnf reporto errores (revisa la salida de arriba)"
-  rpm -q wlroots-devel >/dev/null 2>&1 || err "wlroots-devel no se instalo: dwl no puede compilarse sin el."
+  if [ "$WLR_MODO" = repo ]; then
+    rpm -q wlroots-devel >/dev/null 2>&1 || err "wlroots-devel no se instalo: dwl no puede compilarse sin el."
+  fi
   for p in greetd tuigreet fcft-devel tllist-devel lf; do
     rpm -q "$p" >/dev/null 2>&1 || warn "No se instalo: $p (instalalo a mano o desde un COPR)"
   done
@@ -368,8 +471,9 @@ elif [ "$FAMILIA" = "debian" ]; then
   hdr "PAQUETES - DEBIAN / UBUNTU"
   # ==================== DEBIAN Y DERIVADAS (apt + systemd) ====================
   # Nombres comprobados en los indices de Debian forky/sid y Ubuntu 26.10 (stonking).
-  # libwlroots-0.20-dev es lo que pide dwl; Debian 13 y Ubuntu 26.04 no lo traen
-  # (eso se bloquea antes, en DETECCION DEL SISTEMA).
+  # libwlroots-0.20-dev lo trae el repo solo en algunas versiones: se decide abajo
+  # (wlr_repo_check). Si no esta, las dependencias de compilacion salen del
+  # Build-Depends oficial del paquete wlroots de Debian sid.
   # Firefox: Debian lo da como firefox-esr; Ubuntu solo como snap.
   # seatd de Debian arranca con 'seatd -g video': el grupo de acceso es 'video'.
   # greetd corre como usuario _greetd (lo crea el propio paquete).
@@ -377,11 +481,21 @@ elif [ "$FAMILIA" = "debian" ]; then
   DEB_PKGS="build-essential git pkgconf patch perl curl unzip fontconfig procps nano pciutils
     libwayland-dev wayland-protocols libxkbcommon-dev libinput-dev libseat-dev seatd
     xwayland libgl1-mesa-dri libdrm-dev libpango1.0-dev libcairo2-dev libpixman-1-dev
-    libgudev-1.0-dev libfcft-dev libtllist-dev libwlroots-0.20-dev
+    libgudev-1.0-dev libfcft-dev libtllist-dev
     foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulse
     swaybg swaylock grim slurp wl-clipboard brightnessctl lf mpv zathura zathura-pdf-poppler
     xdg-utils imv chrony firefox-esr btop cowsay dbus-daemon
     greetd tuigreet fonts-jetbrains-mono"
+  if wlr_repo_check; then
+    WLR_MODO=repo
+    ok "wlroots $WLR_REPO_VER en tus repositorios (dwl lo usara)"
+    DEB_PKGS="$DEB_PKGS libwlroots-$WLR_SERIE-dev"
+  else
+    WLR_MODO=fuente
+    warn "Tus repositorios no traen wlroots $WLR_SERIE.x: se compilara la $WLR_SERIE.x mas reciente desde fuente. Tarda varios minutos."
+    # Build-Depends de wlroots (Debian sid) + lo que piden wayland, libdrm, pixman y xkbcommon
+    DEB_PKGS="$DEB_PKGS meson ninja-build pkgconf libffi-dev libexpat1-dev libsystemd-dev libcap-dev libegl-dev libegl1-mesa-dev libgbm-dev libgles2-mesa-dev libvulkan-dev libcairo2-dev libpng-dev liblcms2-dev glslang-tools hwdata libdisplay-info-dev libliftoff-dev libinput-dev libseat-dev libpciaccess-dev bison flex libx11-xcb-dev libxcb1-dev libxcb-composite0-dev libxcb-dri3-dev libxcb-errors-dev libxcb-ewmh-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-present-dev libxcb-render-util0-dev libxcb-render0-dev libxcb-res0-dev libxcb-shm0-dev libxcb-xfixes0-dev libxcb-xinput-dev libxkbcommon-dev libwayland-dev xwayland"
+  fi
   # Solo se piden los paquetes que existen en tu version (apt-cache show)
   DEB_OK=""; DEB_NO=""
   for p in $DEB_PKGS; do
@@ -396,7 +510,9 @@ elif [ "$FAMILIA" = "debian" ]; then
       sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$p" >/dev/null 2>&1 || warn "No se pudo instalar: $p"
     done
   fi
-  dpkg -s libwlroots-0.20-dev >/dev/null 2>&1 || err "libwlroots-0.20-dev no se instalo: dwl no puede compilarse sin el."
+  if [ "$WLR_MODO" = repo ]; then
+    dpkg -s "libwlroots-$WLR_SERIE-dev" >/dev/null 2>&1 || err "libwlroots-$WLR_SERIE-dev no se instalo: dwl no puede compilarse sin el."
+  fi
   for p in greetd tuigreet libfcft-dev libtllist-dev; do
     dpkg -s "$p" >/dev/null 2>&1 || warn "No se instalo: $p"
   done
@@ -438,16 +554,17 @@ else
   # Lista SIN wlroots: el nombre cambia cada serie (0.18 -> 0.19 -> 0.20...)
   ARCH_PKGS="base-devel git libinput wayland wayland-protocols libxkbcommon seatd xorg-xwayland mesa libdrm pango cairo pixman fcft tllist foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulse swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano ttf-jetbrains-mono-nerd ttf-nerd-fonts-symbols ttf-nerd-fonts-symbols-mono lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd greetd-tuigreet"
 
-  # --- FIX 13: wlroots se detecta en los repos (nunca a mano) ---
-  WLR_PKG=""
-  for c in wlroots0.20 wlroots0.19 wlroots0.18 wlroots0.17 wlroots; do
-    if pacman -Si "$c" >/dev/null 2>&1; then WLR_PKG="$c"; break; fi
-  done
-  if [ -n "$WLR_PKG" ]; then
-    ok "wlroots en los repos: $WLR_PKG (detectado, no escrito a mano)"
-    ARCH_PKGS="$ARCH_PKGS $WLR_PKG"
+  # --- wlroots 0.20.x: la de los repos si existe, si no se compila desde fuente ---
+  # (wlroots0.20 es el nombre del paquete de Arch en la serie 0.20; 0.19 y 0.18 no sirven a dwl)
+  if wlr_repo_check; then
+    WLR_MODO=repo
+    ok "wlroots $WLR_REPO_VER en los repos (dwl lo usara)"
+    ARCH_PKGS="$ARCH_PKGS wlroots$WLR_SERIE"
   else
-    warn "Ningun wlroots en los repos: dwl no podra compilar"
+    WLR_MODO=fuente
+    warn "Tus repositorios no traen wlroots $WLR_SERIE.x: se compilara la $WLR_SERIE.x mas reciente desde fuente. Tarda varios minutos."
+    # Dependencias de compilacion (nombres comprobados en el indice de Arch core/extra)
+    ARCH_PKGS="$ARCH_PKGS meson ninja gcc make pkgconf git libffi expat systemd-libs libglvnd mesa vulkan-headers vulkan-icd-loader libxcb xcb-util-wm xcb-util-renderutil xcb-util-image xcb-util-errors xcb-util-cursor xcb-util-keysyms xcb-util-xrm libdisplay-info libliftoff hwdata libinput seatd libpciaccess bison flex wayland wayland-protocols libxkbcommon libdrm pixman xorg-xwayland glslang lcms2"
   fi
 
   # --- FIX 14: un paquete que ya no existe NO tumba la instalacion ---
@@ -500,6 +617,20 @@ else
     echo "KEYMAP=$KB_CONSOLE" | sudo tee -a /etc/vconsole.conf >/dev/null
   fi
   sudo loadkeys "$KB_CONSOLE" 2>/dev/null || true
+fi
+
+# ---------- wlroots desde fuente (si los repos de la distro no traian 0.20.x) ----------
+if [ "$WLR_MODO" = fuente ]; then
+  echo
+  WLR_TAG="$(wlr_ultima_tag)"
+  info "Ultima wlroots $WLR_SERIE.x upstream: $WLR_TAG. Compilando (varios minutos; registro en $WLR_LOG)..."
+  if build_wlroots_fuente "$WLR_TAG"; then
+    ok "wlroots $WLR_TAG instalado en /usr/local (es el que usa dwl)"
+  else
+    tail -n 25 "$WLR_LOG" 2>/dev/null
+    err "No se pudo compilar wlroots $WLR_TAG. Mira el registro completo en $WLR_LOG"
+  fi
+  pkg-config --atleast-version="$WLR_SERIE.0" "wlroots-$WLR_SERIE" 2>/dev/null || err "pkg-config no encuentra wlroots-$WLR_SERIE tras compilarlo."
 fi
 
 # ---------- Permisos de usuario ----------
@@ -1295,4 +1426,5 @@ echo "          Super+Shift+e salir de sesion"
 line
 [ "${FINAL_ERROR:-0}" -eq 1 ] && err "Revisa los errores de arriba antes de reiniciar."
 ok "Instalacion v$VERSION completada. Realiza ${B}sudo reboot${R} para cargar todo sin problema."
+rm -rf ~/dwl-instalador
 exit 0
