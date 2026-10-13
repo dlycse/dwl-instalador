@@ -1,10 +1,10 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0 — Wayland con dwl + dwlb (Void + Arch + Fedora)
+# install-dwl v1.0.2 — Wayland con dwl + dwlb (Void + Arch + Fedora)
 # ============================================================
 set +e
 
-VERSION="1.0"
+VERSION="1.0.2"
 BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
