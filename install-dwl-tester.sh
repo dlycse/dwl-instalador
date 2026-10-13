@@ -1,8 +1,10 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.6 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
+# install-dwl v1.0.7 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
 # REGLA DE VERSIONES: cada funcion nueva o problema resuelto sube 0.01
 # (1.0.5 -> 1.0.6 -> 1.0.7 ...). Al subir, cambia VERSION abajo y este encabezado.
+# VERSION 1.0.7: fix — wayland necesita libxml2 (dtd_validation, por defecto activo):
+#   se anade libxml2-dev/-devel/libxml2 y libudev-dev en Debian (lo pide libdrm).
 # VERSION 1.0.6: si ya hay un gestor de sesion (lightdm, gdm, sddm...), pregunta
 #   si se cambia a greetd + tuigreet o se conserva (por defecto se conserva).
 # VERSION 1.0.5: barra con el tag activo marcado (parche IPC de dwl, corregido:
@@ -73,7 +75,7 @@
 # ============================================================
 set +e
 
-VERSION="1.0.6"
+VERSION="1.0.7"
 BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -387,7 +389,7 @@ if [ "$FAMILIA" = "void" ]; then
     warn "Tus repositorios no traen wlroots $WLR_SERIE.x: se compilara la $WLR_SERIE.x mas reciente desde fuente. Tarda varios minutos."
     VOID_WLR=""
     # Dependencias de compilacion: las de la plantilla oficial de wlroots0.20 en void-packages
-    VOID_BUILD="meson ninja pkg-config wayland-devel glslang hwids lcms2-devel libgbm-devel libglvnd-devel libseat-devel eudev-libudev-devel libdrm-devel libinput-devel libxkbcommon-devel pixman-devel wayland-protocols vulkan-loader-devel xcb-util-errors-devel xcb-util-wm-devel xcb-util-renderutil-devel libdisplay-info-devel libliftoff-devel libxcb-devel xcb-util-cursor-devel xcb-util-devel xcb-util-image-devel xcb-util-keysyms-devel xcb-util-xrm-devel xorg-server-xwayland"
+    VOID_BUILD="meson ninja pkg-config libxml2-devel wayland-devel glslang hwids lcms2-devel libgbm-devel libglvnd-devel libseat-devel eudev-libudev-devel libdrm-devel libinput-devel libxkbcommon-devel pixman-devel wayland-protocols vulkan-loader-devel xcb-util-errors-devel xcb-util-wm-devel xcb-util-renderutil-devel libdisplay-info-devel libliftoff-devel libxcb-devel xcb-util-cursor-devel xcb-util-devel xcb-util-image-devel xcb-util-keysyms-devel xcb-util-xrm-devel xorg-server-xwayland"
   fi
   info "Instalando paquetes base para Void Linux..."
   # shellcheck disable=SC2086
@@ -467,7 +469,7 @@ elif [ "$FAMILIA" = "fedora" ]; then
     WLR_MODO=fuente
     warn "Tus repositorios no traen wlroots $WLR_SERIE.x (Fedora 43 trae 0.19): se compilara la $WLR_SERIE.x mas reciente desde fuente. Tarda varios minutos."
     # Dependencias de compilacion (nombres comprobados en el indice de Fedora 43/44)
-    FEDORA_PKGS="$FEDORA_PKGS meson ninja-build libffi-devel expat-devel systemd-devel libglvnd-devel mesa-libEGL-devel mesa-libgbm-devel vulkan-loader-devel vulkan-headers libxcb-devel xcb-util-wm-devel xcb-util-renderutil-devel xcb-util-image-devel xcb-util-errors-devel xcb-util-cursor-devel xcb-util-keysyms-devel xcb-util-devel xcb-util-xrm-devel libdisplay-info-devel libliftoff-devel hwdata libinput-devel libseat-devel libpciaccess-devel bison flex wayland-devel wayland-protocols-devel libxkbcommon-devel libdrm-devel pixman-devel glslang lcms2-devel"
+    FEDORA_PKGS="$FEDORA_PKGS meson ninja-build libffi-devel expat-devel libxml2-devel systemd-devel libglvnd-devel mesa-libEGL-devel mesa-libgbm-devel vulkan-loader-devel vulkan-headers libxcb-devel xcb-util-wm-devel xcb-util-renderutil-devel xcb-util-image-devel xcb-util-errors-devel xcb-util-cursor-devel xcb-util-keysyms-devel xcb-util-devel xcb-util-xrm-devel libdisplay-info-devel libliftoff-devel hwdata libinput-devel libseat-devel libpciaccess-devel bison flex wayland-devel wayland-protocols-devel libxkbcommon-devel libdrm-devel pixman-devel glslang lcms2-devel"
   fi
   # --skip-unavailable: un paquete que no existe en tu version no tumba la instalacion
   # shellcheck disable=SC2086
@@ -521,7 +523,7 @@ elif [ "$FAMILIA" = "debian" ]; then
     WLR_MODO=fuente
     warn "Tus repositorios no traen wlroots $WLR_SERIE.x: se compilara la $WLR_SERIE.x mas reciente desde fuente. Tarda varios minutos."
     # Build-Depends de wlroots (Debian sid) + lo que piden wayland, libdrm, pixman y xkbcommon
-    DEB_PKGS="$DEB_PKGS meson ninja-build pkgconf libffi-dev libexpat1-dev libsystemd-dev libcap-dev libegl-dev libegl1-mesa-dev libgbm-dev libgles2-mesa-dev libvulkan-dev libcairo2-dev libpng-dev liblcms2-dev glslang-tools hwdata libdisplay-info-dev libliftoff-dev libinput-dev libseat-dev libpciaccess-dev bison flex libx11-xcb-dev libxcb1-dev libxcb-composite0-dev libxcb-dri3-dev libxcb-errors-dev libxcb-ewmh-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-present-dev libxcb-render-util0-dev libxcb-render0-dev libxcb-res0-dev libxcb-shm0-dev libxcb-xfixes0-dev libxcb-xinput-dev libxkbcommon-dev libwayland-dev xwayland"
+    DEB_PKGS="$DEB_PKGS meson ninja-build pkgconf libffi-dev libexpat1-dev libxml2-dev libudev-dev libsystemd-dev libcap-dev libegl-dev libegl1-mesa-dev libgbm-dev libgles2-mesa-dev libvulkan-dev libcairo2-dev libpng-dev liblcms2-dev glslang-tools hwdata libdisplay-info-dev libliftoff-dev libinput-dev libseat-dev libpciaccess-dev bison flex libx11-xcb-dev libxcb1-dev libxcb-composite0-dev libxcb-dri3-dev libxcb-errors-dev libxcb-ewmh-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-present-dev libxcb-render-util0-dev libxcb-render0-dev libxcb-res0-dev libxcb-shm0-dev libxcb-xfixes0-dev libxcb-xinput-dev libxkbcommon-dev libwayland-dev xwayland"
   fi
   # Solo se piden los paquetes que existen en tu version (apt-cache show)
   DEB_OK=""; DEB_NO=""
@@ -591,7 +593,7 @@ else
     WLR_MODO=fuente
     warn "Tus repositorios no traen wlroots $WLR_SERIE.x: se compilara la $WLR_SERIE.x mas reciente desde fuente. Tarda varios minutos."
     # Dependencias de compilacion (nombres comprobados en el indice de Arch core/extra)
-    ARCH_PKGS="$ARCH_PKGS meson ninja gcc make pkgconf git libffi expat systemd-libs libglvnd mesa vulkan-headers vulkan-icd-loader libxcb xcb-util-wm xcb-util-renderutil xcb-util-image xcb-util-errors xcb-util-cursor xcb-util-keysyms xcb-util-xrm libdisplay-info libliftoff hwdata libinput seatd libpciaccess bison flex wayland wayland-protocols libxkbcommon libdrm pixman xorg-xwayland glslang lcms2"
+    ARCH_PKGS="$ARCH_PKGS meson ninja gcc make pkgconf git libffi expat libxml2 systemd-libs libglvnd mesa vulkan-headers vulkan-icd-loader libxcb xcb-util-wm xcb-util-renderutil xcb-util-image xcb-util-errors xcb-util-cursor xcb-util-keysyms xcb-util-xrm libdisplay-info libliftoff hwdata libinput seatd libpciaccess bison flex wayland wayland-protocols libxkbcommon libdrm pixman xorg-xwayland glslang lcms2"
   fi
 
   # --- FIX 14: un paquete que ya no existe NO tumba la instalacion ---
@@ -1464,5 +1466,5 @@ echo "          Super+Shift+e salir de sesion"
 line
 [ "${FINAL_ERROR:-0}" -eq 1 ] && err "Revisa los errores de arriba antes de reiniciar."
 ok "Instalacion v$VERSION completada. Realiza ${B}sudo reboot${R} para cargar todo sin problema."
-rm -rf ~/dwl-instalador 
+rm -rf ~/dwl-instalador
 exit 0
