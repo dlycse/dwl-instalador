@@ -239,7 +239,7 @@ elif [ "$FAMILIA" = "fedora" ]; then
     libgudev-devel fcft-devel tllist-devel wlroots-devel
     foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulseaudio
     swaybg swaylock grim slurp wl-clipboard brightnessctl lf mpv zathura zathura-pdf-poppler
-    xdg-utils imv chrony firefox btop cowsay dbus-daemon
+    xdg-utils imv chrony firefox btop cowsay patch perl-interpreter dbus-daemon
     greetd greetd-selinux tuigreet jetbrains-mono-fonts"
   # --skip-unavailable: un paquete que no existe en tu version no tumba la instalacion
   # shellcheck disable=SC2086
