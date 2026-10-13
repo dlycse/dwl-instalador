@@ -1,6 +1,6 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0 — Wayland con dwl + dwlb (Void + Arch)
+# install-dwl v1.0 — Wayland con dwl + dwlb (Void + Arch + Fedora)
 # ============================================================
 set +e
 
@@ -48,8 +48,8 @@ ok(){   printf "  %s✓%s %s\n" "$GRN" "$R" "$1"; }
 err(){  printf "  %s✗%s %s\n" "$RED" "$R" "$1"; exit 1; }
 confirm(){
   printf "  %s[?]%s %s [s/N]: " "$CYAN" "$R" "$1"
-  read -r R
-  case "$R" in s|S|y|Y|si|SI|yes|YES) return 0;; *) return 1;; esac
+  read -r ANS
+  case "$ANS" in s|S|y|Y|si|SI|yes|YES) return 0;; *) return 1;; esac
 }
 
 DWLB_FONT_SIZE=10
@@ -81,10 +81,16 @@ FAMILIA="unknown"
 case "${ID:-unknown}" in
   void) FAMILIA="void" ;;
   arch|manjaro|endeavouros|garuda|artix|archcraft|cachyos|arcolinux|parabola) FAMILIA="arch" ;;
+  fedora) FAMILIA="fedora" ;;
   *) case "${ID_LIKE:-}" in *arch*) FAMILIA="arch" ;; *void*) FAMILIA="void" ;; esac ;;
 esac
-[ "$FAMILIA" = "unknown" ] && err "Solo compatible con Void Linux y Arch Linux."
+[ "$FAMILIA" = "unknown" ] && err "Solo compatible con Void Linux, Arch Linux y Fedora."
 info "Distro detectada: ${ID:-unknown} (familia: $FAMILIA)"
+# Fedora 44+ trae wlroots 0.20 (lo que pide dwl); Fedora 43 trae 0.19 y dwl no compila.
+# Si VERSION_ID no es numerico (p. ej. rawhide), no se bloquea.
+if [ "$FAMILIA" = "fedora" ] && [ "${VERSION_ID:-0}" -lt 44 ] 2>/dev/null; then
+  err "Fedora ${VERSION_ID} trae wlroots 0.19 y dwl necesita wlroots 0.20: usa Fedora 44 o superior."
+fi
 
 # ---------- Espacio libre ----------
 FREE_GB="$(df -BG --output=avail / 2>/dev/null | tail -n1 | tr -dc '0-9')"
@@ -170,7 +176,7 @@ if [ "$FAMILIA" = "void" ]; then
   fi
 
   info "Instalando paquetes base para Void Linux..."
-  sudo xbps-install -Sy base-devel git libinput-devel void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree wayland-devel wayland-protocols libxkbcommon-devel wlroots-devel libseat-devel seatd xorg-server-xwayland mesa-dri libdrm-devel pango-devel cairo-devel pixman-devel libgudev-devel fcft-devel tllist foot wmenu fastfetch pipewire wireplumber alsa-pipewire swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd tuigreet turnstile || err "Fallo instalando paquetes."
+  sudo xbps-install -Sy base-devel git libinput-devel wayland-devel wayland-protocols libxkbcommon-devel wlroots-devel libseat-devel seatd xorg-server-xwayland mesa-dri libdrm-devel pango-devel cairo-devel pixman-devel libgudev-devel fcft-devel tllist foot wmenu fastfetch pipewire wireplumber alsa-pipewire swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd tuigreet turnstile || err "Fallo instalando paquetes."
   GREETER_USER="greetd"
   SEAT_GROUP="_seatd"
 
@@ -216,6 +222,61 @@ if [ "$FAMILIA" = "void" ]; then
     sudo sed -i "s|^.*KEYMAP=.*|KEYMAP=\"$KB_CONSOLE\"|" /etc/rc.conf
   else
     echo "KEYMAP=\"$KB_CONSOLE\"" | sudo tee -a /etc/rc.conf >/dev/null
+  fi
+  sudo loadkeys "$KB_CONSOLE" 2>/dev/null || true
+
+elif [ "$FAMILIA" = "fedora" ]; then
+  hdr "PAQUETES - FEDORA"
+  # ==================== FEDORA (dnf + systemd) ====================
+  # Nombres comprobados en packages.fedoraproject.org (Fedora 43-45):
+  # wlroots-devel 0.20 solo desde Fedora 44; fcft-devel y tllist-devel
+  # son los que pide dwlb; greetd y tuigreet estan en los repos oficiales.
+  # 'lf' no se encontro en la web de Fedora: si no esta, se avisa abajo.
+  info "Instalando paquetes para Fedora..."
+  FEDORA_PKGS="gcc make pkgconf-pkg-config git curl unzip fontconfig procps-ng nano pciutils
+    wayland-devel wayland-protocols-devel libxkbcommon-devel libinput-devel libseat-devel seatd
+    xorg-x11-server-Xwayland mesa-dri-drivers libdrm-devel pango-devel cairo-devel pixman-devel
+    libgudev-devel fcft-devel tllist-devel wlroots-devel
+    foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulseaudio
+    swaybg swaylock grim slurp wl-clipboard brightnessctl lf mpv zathura zathura-pdf-poppler
+    xdg-utils imv chrony firefox btop cowsay dbus-daemon
+    greetd greetd-selinux tuigreet jetbrains-mono-fonts"
+  # --skip-unavailable: un paquete que no existe en tu version no tumba la instalacion
+  # shellcheck disable=SC2086
+  sudo dnf install -y --skip-unavailable $FEDORA_PKGS || warn "dnf reporto errores (revisa la salida de arriba)"
+  rpm -q wlroots-devel >/dev/null 2>&1 || err "wlroots-devel no se instalo: dwl no puede compilarse sin el."
+  for p in greetd tuigreet fcft-devel tllist-devel lf; do
+    rpm -q "$p" >/dev/null 2>&1 || warn "No se instalo: $p (instalalo a mano o desde un COPR)"
+  done
+
+  # Nerd Font: Fedora no la empaqueta; se baja la release oficial de Nerd Fonts
+  NF_DIR="$REAL_HOME/.local/share/fonts/JetBrainsMonoNerd"
+  if fc-list 2>/dev/null | grep -qi "JetBrainsMono Nerd"; then
+    ok "JetBrainsMono Nerd Font ya instalada"
+  else
+    info "Descargando JetBrainsMono Nerd Font..."
+    if curl -fsSL --max-time 180 -o /tmp/JetBrainsMono-nf.zip \
+         "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip" \
+       && sudo -u "$REAL_USER" mkdir -p "$NF_DIR" \
+       && sudo -u "$REAL_USER" unzip -oq /tmp/JetBrainsMono-nf.zip -d "$NF_DIR"; then
+      sudo -u "$REAL_USER" fc-cache -f "$NF_DIR" >/dev/null 2>&1
+      ok "JetBrainsMono Nerd Font instalada en $NF_DIR"
+    else
+      warn "No pude instalar la Nerd Font: la barra usara una fuente de respaldo"
+    fi
+    rm -f /tmp/JetBrainsMono-nf.zip
+  fi
+
+  sudo systemctl enable --now seatd.service 2>/dev/null || true
+  sudo systemctl enable --now dbus.service 2>/dev/null || true
+  GREETER_USER="greeter"
+  SEAT_GROUP="seat"
+
+  # Keymap de consola
+  if grep -q '^KEYMAP=' /etc/vconsole.conf 2>/dev/null; then
+    sudo sed -i "s|^KEYMAP=.*|KEYMAP=$KB_CONSOLE|" /etc/vconsole.conf
+  else
+    echo "KEYMAP=$KB_CONSOLE" | sudo tee -a /etc/vconsole.conf >/dev/null
   fi
   sudo loadkeys "$KB_CONSOLE" 2>/dev/null || true
 
@@ -393,6 +454,11 @@ fi
 # activos. Si el parche no aplica o no compila, se sigue sin el (la barra
 # arranca con -no-ipc y no marca el tag activo). No detiene la instalacion.
 IPC_OK=0
+# Herramientas que el parche necesita: si falta una, el parche NO se aplica
+# y dwl se compila sin IPC en silencio (pasaba en Fedora sin 'patch').
+for c in patch perl awk sed curl; do
+  command -v "$c" >/dev/null 2>&1 || warn "Falta '$c': el parche IPC no se podra aplicar (instalalo y vuelve a correr el instalador)"
+done
 git checkout -q -- Makefile dwl.c config.def.h 2>/dev/null
 rm -f protocols/dwl-ipc-unstable-v2.xml dwl.c.rej dwl.c.orig
 if curl -fsSL https://codeberg.org/dwl/dwl-patches/raw/branch/main/patches/ipc/ipc.patch -o /tmp/dwl-ipc.patch 2>/dev/null; then
@@ -1079,6 +1145,5 @@ echo "          Super+q cerrar          Super+w barra on/off"
 echo "          Super+Shift+e salir de sesion"
 line
 [ "${FINAL_ERROR:-0}" -eq 1 ] && err "Revisa los errores de arriba antes de reiniciar."
-ok "Instalacion v$VERSION completada. Realiza sudo reboot para cargar todo sin problema."
-rm -rf ~/dwl-instalador
+ok "Instalacion v$VERSION completada. Realiza ${B}sudo reboot${R} para cargar todo sin problema."
 exit 0
