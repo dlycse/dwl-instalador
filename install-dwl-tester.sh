@@ -1,8 +1,10 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.7 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
+# install-dwl v1.0.8 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
 # REGLA DE VERSIONES: cada funcion nueva o problema resuelto sube 0.01
 # (1.0.5 -> 1.0.6 -> 1.0.7 ...). Al subir, cambia VERSION abajo y este encabezado.
+# VERSION 1.0.8: fix — foot 1.21 (Debian 13) no conoce [colors-dark] ni alpha-mode:
+#   se usa [colors] y solo alpha. Validado con foot --check-config.
 # VERSION 1.0.7: fix — wayland necesita libxml2 (dtd_validation, por defecto activo):
 #   se anade libxml2-dev/-devel/libxml2 y libudev-dev en Debian (lo pide libdrm).
 # VERSION 1.0.6: si ya hay un gestor de sesion (lightdm, gdm, sddm...), pregunta
@@ -75,7 +77,7 @@
 # ============================================================
 set +e
 
-VERSION="1.0.7"
+VERSION="1.0.8"
 BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -875,7 +877,7 @@ cat > "$FOOT_INI" <<EOF
 [main]
 font=JetBrainsMono Nerd Font:size=$DWLB_FONT_SIZE
 
-[colors-dark]
+[colors]
 background=1a1b26
 foreground=c0caf5
 regular0=15161e
@@ -896,7 +898,6 @@ bright6=7dcfff
 bright7=c0caf5
 # Transparencia del fondo: 0 = invisible, 1 = opaco
 alpha=0.75
-alpha-mode=default
 EOF
 sudo chown -R "$REAL_USER:$REAL_USER" "$REAL_HOME/.config" 2>/dev/null
 ok "Terminal foot con fondo transparente (alpha 0.75): $FOOT_INI"
