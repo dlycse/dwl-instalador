@@ -1,8 +1,10 @@
 # dwl-instalador
 
 > ### VERSIÓN 1.0
-> - **Void Linux** (xbps + runit) y **Arch Linux** (pacman + systemd).
+> - **Void Linux** (xbps + runit), **Arch Linux** (pacman + systemd) y **Fedora 44 o superior** (dnf + systemd).
+> - **Fedora:** dwl necesita wlroots 0.20, que Fedora trae desde la 44. En Fedora 43 el instalador se detiene al inicio.
 > - Probado en simulación (repositorios y gestor de paquetes simulados) y en **Void x86_64 (glibc)**, que es la edición recomendada.
+> - **Fedora 44** probado en VirtualBox: dwl compila y la barra marca el tag activo. El inicio de sesión con greetd en Fedora todavía no está confirmado.
 > - La rama de **Arch** todavía no tiene una prueba completa en una máquina real: si algo falla, mira [🩺 Si algo falla](#-si-algo-falla).
 > - Se recomiendan **20 GB libres** para evitar errores de almacenamiento.
 
@@ -25,6 +27,7 @@
 | **grim** | Capturas de pantalla |
 | **greetd + tuigreet** | Pantalla de inicio de sesión (en **tty1**) |
 | **pipewire + wireplumber** | Audio |
+| **JetBrainsMono Nerd Font** | Fuente de la barra y la terminal |
 | Firefox, mpv, zathura, imv, btop | Navegador, video, PDF, imágenes, monitor |
 
 El instalador tiene **un solo modo**: instala todo lo de la tabla, compila dwl y dwlb, aplica tu configuración y arranca con **greetd + tuigreet**.
@@ -40,6 +43,12 @@ Además deja listo:
 - Desactiva otros gestores de sesión si los hay (**lightdm, gdm, sddm, xdm, lxdm**). Se **desactivan**, no se desinstalan.
 
 **No instala drivers de GPU ni Steam.** Eso lo eliges tú aparte, en un comando (ver [Steam y drivers](#-steam-y-drivers-opcional)).
+
+### Fedora
+
+- Fedora no empaqueta **JetBrainsMono Nerd Font**: el instalador la descarga de la [release oficial de Nerd Fonts](https://github.com/ryanoasis/nerd-fonts/releases) a `~/.local/share/fonts`.
+- El instalador también instala **`patch`** y **`perl-interpreter`**. Sin `patch` el parche IPC de dwl no se aplica y la barra no marca el tag activo.
+- `lf` no siempre está en los repositorios de Fedora. Si falta, el instalador avisa; instálalo a mano (`sudo dnf install lf` o desde un COPR).
 
 ---
 
@@ -58,6 +67,8 @@ En **Void**, el instalador activa estos repositorios antes de instalar los paque
 
 En **Arch** el instalador **no** activa `[multilib]`. Si quieres Steam, actívalo tú en `/etc/pacman.conf` (ver [Steam y drivers](#-steam-y-drivers-opcional)).
 
+En **Fedora** el instalador no activa ningún repositorio extra (no usa RPM Fusion). Steam y los drivers NVIDIA de Fedora vienen de RPM Fusion, que activas tú.
+
 ---
 
 ## Instalación en 4 pasos
@@ -71,6 +82,8 @@ Lo necesitas para clonar el repositorio. El propio instalador también instala `
 sudo xbps-install -S git
 # Arch
 sudo pacman -S git nano # (habilita multilib con sudo nano /etc/pacman.conf)  
+# Fedora
+sudo dnf install -y git
 ```
 
 ### 1. Clonar el repositorio
@@ -112,7 +125,7 @@ En este orden:
 | **Espacio libre** | Solo pregunta si hay menos de 20 GB libres en `/`: `s` para continuar, `N` para cancelar |
 | **Teclado** | `1` Inglés (us) · `2` Español de España (es) · `3` Latinoamericano (latam) — por defecto `3` |
 | **País o zona horaria** | Escribe tu país (`Colombia`, `México`, `Argentina`, `España`, `Chile`, `Perú`…) o la zona directa (`America/Bogota`). Por defecto `America/Bogota` |
-| **Kernel** | Pregunta si buscar e instalar el **kernel más reciente** de los repos. Si hay una serie nueva, se instala **junto** al actual (no lo reemplaza) y se activa al reiniciar |
+| **Kernel** *(solo Void)* | Pregunta si buscar e instalar el **kernel más reciente** de los repos. Si hay una serie nueva, se instala **junto** al actual (no lo reemplaza) y se activa al reiniciar |
 
 ---
 
@@ -182,6 +195,27 @@ sudo pacman -S nvidia-open nvidia-utils lib32-nvidia-utils
 
 Para NVIDIA en Arch, activa el modeset del kernel con `nvidia_drm.modeset=1` (ver la [wiki de Arch](https://wiki.archlinux.org/title/NVIDIA#DRM_kernel_mode_setting)).
 
+### Fedora
+
+Steam y el driver NVIDIA están en **RPM Fusion**. Son comandos estándar de Fedora; el instalador no los ejecuta:
+
+```bash
+# 1. Activar RPM Fusion (free y nonfree)
+sudo dnf install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+    https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+
+# 2. Steam
+sudo dnf install -y steam
+
+# 3a. Driver NVIDIA (akmod compila el módulo; tarda unos minutos y luego reinicia)
+sudo dnf install -y akmod-nvidia
+
+# 3b. Driver AMD / Intel: Mesa ya viene en Fedora (32 bits para Steam)
+sudo dnf install -y mesa-vulkan-drivers mesa-vulkan-drivers.i686
+```
+
+Para NVIDIA en Fedora, el modeset de Wayland se activa con `nvidia-drm.modeset=1` (ver la [documentación de RPM Fusion](https://rpmfusion.org/Howto/NVIDIA)).
+
 ### Comprobar la GPU
 
 ```bash
@@ -244,7 +278,7 @@ La tecla **Super** es la de Windows (⌘ en teclados de Mac). Lista completa en 
 | `~/dwlb/config.h` | Valores compilados de dwlb | `dwlb-rebuild` |
 | `~/.config/lf/lfrc` | Gestor de archivos `lf` | Al reabrir `lf` |
 | `/usr/local/bin/dwl-session` | Variables y programas que arrancan con la sesión | Al reiniciar la sesión |
-| `/etc/greetd/config.toml` | Pantalla de login (greetd + tuigreet) | `sudo sv restart greetd` (Void) o `sudo systemctl restart greetd` (Arch) |
+| `/etc/greetd/config.toml` | Pantalla de login (greetd + tuigreet) | `sudo sv restart greetd` (Void) o `sudo systemctl restart greetd` (Arch y Fedora) |
 
 ### Ejemplo: cambiar un atajo de teclado
 
@@ -278,14 +312,19 @@ cp /ruta/de/mi-fondo.png ~/Pictures/wallpaper.jpg
 |---|---|
 | dwl no arranca / pantalla en negro | Reinicia de verdad: `sudo reboot`. Casi siempre son los grupos `_seatd`/`seat`/`video` sin aplicar |
 | No puedes moverte / se colgó | `Ctrl` + `Alt` + `F2` para ir a una consola y ahí `sudo reboot` |
-| `tuigreet` no aparece | Está en la **tty 1**. Mira el estado: Void `sudo sv status greetd` · Arch `systemctl status greetd` |
-| El instalador termina con `greetd NO arranco` | Revisa el log: Void `sudo tail -n 30 /var/log/greetd/current` · Arch `journalctl -u greetd -b` |
+| `tuigreet` no aparece | Está en la **tty 1**. Mira el estado: Void `sudo sv status greetd` · Arch y Fedora `systemctl status greetd` |
+| El instalador termina con `greetd NO arranco` | Revisa el log: Void `sudo tail -n 30 /var/log/greetd/current` · Arch y Fedora `journalctl -u greetd -b` |
 | Arch: `error: no se ha encontrado el paquete` | Ya no debería pasar: el instalador comprueba cada paquete antes de instalarlo y solo omite los que no existen. Verás un aviso `No estan en los repos, se omiten: …` |
 | Arch: `wlroots` no está en los repos | Lo detecta solo (prueba `wlroots0.20`, `0.19`, `0.18`…). Si no hay ninguno, avisa y dwl no compilará |
+| Fedora: `Fedora 43 trae wlroots 0.19` | El instalador se detiene a propósito: dwl necesita wlroots 0.20. Actualiza a Fedora 44 o superior |
+| Fedora: `Falta 'patch'` o la barra no marca el tag activo | `sudo dnf install -y patch perl-interpreter` y vuelve a correr el instalador |
+| Fedora: `No se instalo: lf` (o `greetd`, `tuigreet`) | Instálalo a mano con `sudo dnf install <paquete>` o desde un COPR. Mira el nombre exacto con `dnf search <paquete>` |
+| Fedora: la barra no tiene iconos o usa otra fuente | Comprueba con `fc-list \| grep -i "JetBrainsMono Nerd"`. Si no sale, la descarga falló: instala la fuente a mano en `~/.local/share/fonts` y ejecuta `fc-cache -f` |
+| Fedora: greetd o tuigreet fallan al arrancar | Revisa SELinux con `sudo ausearch -m avc -ts recent` y el log con `journalctl -u greetd -b` |
 | Falla al instalar los paquetes en **musl** o **aarch64** (Void) | Esos sistemas **no tienen** repositorio multilib: el instalador ya lo tiene en cuenta; si aun así falla, quita `void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree` de la línea de `xbps-install` y vuelve a ejecutarlo |
 | `steam` no aparece en XBPS | Resincroniza (`sudo xbps-install -Sy`) y comprueba los repos con `xbps-query -Rs steam` |
-| El audio no va | Void `sudo sv status seatd pipewire` · Arch `systemctl --user status pipewire wireplumber`, y reinicia la sesión |
-| La barra no marca el tag activo ni `[]=` | El parche IPC de dwl no se aplicó o no compiló (mira el aviso al instalar). Sin él, la barra usa `-no-ipc` y los clics en los tags no funcionan. Usa `Super` + `1`…`9` |
+| El audio no va | Void `sudo sv status seatd pipewire` · Arch y Fedora `systemctl --user status pipewire wireplumber`, y reinicia la sesión |
+| La barra no marca el tag activo ni `[]=` | El parche IPC de dwl no se aplicó o no compiló (mira el aviso al instalar; en Fedora suele ser `patch` sin instalar). Sin él, la barra usa `-no-ipc` y los clics en los tags no funcionan. Usa `Super` + `1`…`9` |
 
 ---
 
@@ -308,4 +347,4 @@ Este instalador no reinventa nada: une y configura proyectos existentes.
 
 ---
 
-*Hecho para Void Linux y Arch Linux. Si encuentras un error, abre un issue en el repositorio.*
+*Hecho para Void Linux, Arch Linux y Fedora. Si encuentras un error, abre un issue en el repositorio.*
