@@ -4,7 +4,7 @@
 > - **Void Linux** (xbps + runit), **Arch Linux** (pacman + systemd) y **Fedora 44 o superior** (dnf + systemd).
 > - **Fedora:** dwl necesita wlroots 0.20, que Fedora trae desde la 44. En Fedora 43 el instalador se detiene al inicio.
 > - Probado en simulación (repositorios y gestor de paquetes simulados) y en **Void x86_64 (glibc)**, que es la edición recomendada.
-> - **Fedora 44** probado en VirtualBox: dwl compila y la barra marca el tag activo. El inicio de sesión con greetd en Fedora todavía no está confirmado.
+> - **Fedora 44** probado en VirtualBox: dwl compila y la barra marca el tag activo.
 > - La rama de **Arch** todavía no tiene una prueba completa en una máquina real: si algo falla, mira [🩺 Si algo falla](#-si-algo-falla).
 > - Se recomiendan **20 GB libres** para evitar errores de almacenamiento.
 
