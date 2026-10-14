@@ -50,11 +50,10 @@ Además deja listo:
 - `lf` no siempre está en los repositorios de Fedora. Si falta, el instalador avisa; instálalo a mano (`sudo dnf install lf` o desde un COPR).
 - **SDDM:** en Fedora y Nobara, SDDM lanza la sesión `dwl` a través de un envoltorio: el binario real queda como `/usr/local/bin/dwl-bin` y `/usr/local/bin/dwl` ejecuta `dwl-session`. Por eso, para recompilar dwl en Fedora usa **`dwl-rebuild`** (ver [Personalizar](#personalizar-tu-escritorio)), no `make install`.
 
-### Debian y Ubuntu
+### Debian
 
 - Las dependencias salen de `apt`. Si la versión no trae wlroots 0.20, el instalador lo compila desde fuente.
-- **Firefox:** en Debian se instala `firefox-esr`. En Ubuntu, que solo lo da como snap, se instala con `snap`.
-- **Ubuntu 24.04 y Linux Mint 22** no traen **tuigreet**: en esas distribuciones no se configura greetd y se usa tu gestor de sesión actual (por ejemplo, GDM o LightDM). Elige **dwl** en su menú de sesiones.
+- **Firefox:** se instala `firefox-esr`.
 
 ---
 
@@ -90,7 +89,7 @@ sudo xbps-install -S git
 sudo pacman -S git nano # (habilita multilib con sudo nano /etc/pacman.conf)
 # Fedora y Nobara
 sudo dnf install -y git
-# Debian y Ubuntu
+# Debian
 sudo apt install -y git
 ```
 
@@ -146,7 +145,7 @@ sudo reboot
 
 El reinicio **no es opcional**: los grupos nuevos (`_seatd` o `seat` y `video`) solo se aplican al volver a iniciar sesión, y **sin ellos dwl no puede abrir la GPU ni el teclado/ratón**.
 
-> Si elegiste instalar un kernel nuevo, el reinicio es doblemente necesario.
+> Si elegiste instalar un kernel nuevo, es incluso mas necesario.
 
 ### Cuando vuelvas a arrancar
 
@@ -225,9 +224,9 @@ sudo dnf install -y mesa-vulkan-drivers mesa-vulkan-drivers.i686
 
 Para NVIDIA en Fedora, el modeset de Wayland se activa con `nvidia-drm.modeset=1` (ver la [documentación de RPM Fusion](https://rpmfusion.org/Howto/NVIDIA)).
 
-### Debian y Ubuntu
+### Debian
 
-Steam y los drivers vienen de los repositorios oficiales (en Ubuntu, `multiverse`) y de los repositorios de tu distribución. Consulta la documentación de tu distribución para los drivers de NVIDIA.
+Steam y los drivers vienen de los repositorios oficiales de Debian (sección `non-free` para NVIDIA). Consulta la documentación de Debian para los drivers de NVIDIA.
 
 ### Comprobar la GPU
 
@@ -349,7 +348,6 @@ pgrep -af 'swaybg|dwlb'              # confirma que estén corriendo
 | Fedora: `No se instalo: lf` (o `greetd`, `tuigreet`) | Instálalo a mano con `sudo dnf install <paquete>` o desde un COPR. Mira el nombre exacto con `dnf search <paquete>` |
 | Fedora: la barra no tiene iconos o usa otra fuente | Comprueba con `fc-list \| grep -i "JetBrainsMono Nerd"`. Si no sale, la descarga falló: instala la fuente a mano en `~/.local/share/fonts` y ejecuta `fc-cache -f` |
 | Fedora: greetd o tuigreet fallan al arrancar | Revisa SELinux con `sudo ausearch -m avc -ts recent` y el log con `journalctl -u greetd -b` |
-| Debian / Ubuntu: `tuigreet no esta en los repos` | Es normal en Ubuntu 24.04 y Linux Mint 22. No se configura greetd: entra con tu gestor de sesión y elige **dwl** |
 | Falla al instalar los paquetes en **musl** o **aarch64** (Void) | Esos sistemas **no tienen** repositorio multilib: el instalador ya lo tiene en cuenta; si aun así falla, quita `void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree` de la línea de `xbps-install` y vuelve a ejecutarlo |
 | `steam` no aparece en XBPS | Resincroniza (`sudo xbps-install -Sy`) y comprueba los repos con `xbps-query -Rs steam` |
 | El audio no va | Void `sudo sv status seatd pipewire` · Arch, Fedora y Debian `systemctl --user status pipewire wireplumber`, y reinicia la sesión |
@@ -377,4 +375,4 @@ Este instalador no reinventa nada: une y configura proyectos existentes.
 
 ---
 
-*Hecho para Void Linux, Arch Linux, Fedora, Nobara y Debian/Ubuntu. Si encuentras un error, abre un issue en el repositorio.*
+*Hecho para Void Linux, Arch Linux, Fedora, Nobara y Debian. Si encuentras un error, abre un issue en el repositorio.*
