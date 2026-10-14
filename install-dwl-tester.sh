@@ -1,8 +1,9 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.14 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
+# install-dwl v1.0.15 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
 # REGLA DE VERSIONES: cada funcion nueva o problema resuelto sube 0.01
 # (1.0.5 -> 1.0.6 -> 1.0.7 ...). Al subir, cambia VERSION abajo y este encabezado.
+# VERSION 1.0.15: fix — Nobara (ID=nobara, ID_LIKE=fedora) no era reconocido; ahora es familia fedora.
 # VERSION 1.0.14: fix — wallpaperaccess.com da 403 en algunas redes (VirtualBox). Respaldo en
 #   Wikimedia Commons (CC BY-SA 4.0), valida JPEG/PNG y anota el origen en .wallpaper-instalador.
 # VERSION 1.0.13: fix — wlroots 0.20 compilaba SIN backend DRM (dwl: "disabled at compile-time")
@@ -86,7 +87,7 @@
 # ============================================================
 set +e
 
-VERSION="1.0.14"
+VERSION="1.0.15"
 BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -163,10 +164,10 @@ FAMILIA="unknown"
 case "${ID:-unknown}" in
   void) FAMILIA="void" ;;
   arch|manjaro|endeavouros|garuda|artix|archcraft|cachyos|arcolinux|parabola) FAMILIA="arch" ;;
-  fedora) FAMILIA="fedora" ;;
+  fedora|nobara) FAMILIA="fedora" ;;
   devuan) err "Devuan usa sysvinit, no systemd: este instalador no es compatible." ;;
   debian|ubuntu|linuxmint|pop|zorin|elementary|kali|raspbian|neon|mx) FAMILIA="debian" ;;
-  *) case "${ID_LIKE:-}" in *arch*) FAMILIA="arch" ;; *void*) FAMILIA="void" ;; *debian*|*ubuntu*) FAMILIA="debian" ;; esac ;;
+  *) case "${ID_LIKE:-}" in *arch*) FAMILIA="arch" ;; *void*) FAMILIA="void" ;; *debian*|*ubuntu*) FAMILIA="debian" ;; *fedora*) FAMILIA="fedora" ;; esac ;;
 esac
 [ "$FAMILIA" = "unknown" ] && err "Solo compatible con Void Linux, Arch Linux, Fedora y Debian/Ubuntu (y derivadas)."
 info "Distro detectada: ${ID:-unknown} (familia: $FAMILIA)"
