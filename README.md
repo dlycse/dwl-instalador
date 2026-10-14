@@ -2,7 +2,7 @@
 
 > ### VERSIÓN 1.0.22
 > - **Void Linux** (xbps + runit), **Arch Linux** (pacman + systemd), **Fedora 44 o superior** y **Nobara** (dnf + systemd), y **Debian** puro recomendado aunque puede funcionar en derivadas (apt + systemd).
-> - **Probado** en Void, Arch, Fedora 44(minimal) (y Nobara 44 KDE) y Debian 13.7.
+> - **Probado** en Void, Arch, Fedora 44 (minimal) (y Nobara 44 KDE) y Debian 13.7.
 > - **Fedora 43 y anteriores:** dwl necesita wlroots 0.20. Si los repositorios no lo traen, el instalador lo **compila desde fuente** (tarda varios minutos).
 > - **Sesión:** si ya tienes un gestor de sesión (SDDM, GDM, LightDM…), el instalador te pregunta si lo cambia por greetd + tuigreet o si lo conserva. En el segundo caso, elige **dwl** en el menú de sesiones.
 > - Se recomiendan **20 GB libres** para evitar errores de almacenamiento.
