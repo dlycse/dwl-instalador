@@ -1,8 +1,11 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.12 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
+# install-dwl v1.0.13 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
 # REGLA DE VERSIONES: cada funcion nueva o problema resuelto sube 0.01
 # (1.0.5 -> 1.0.6 -> 1.0.7 ...). Al subir, cambia VERSION abajo y este encabezado.
+# VERSION 1.0.13: fix — wlroots 0.20 compilaba SIN backend DRM (dwl: "disabled at compile-time")
+#   porque Ubuntu 24.04 / Mint 22 trae libdisplay-info 0.1.1 (wlroots pide >= 0.2.0). Ahora se
+#   compila libdisplay-info 0.2.0 desde fuente si el sistema no lo cumple.
 # VERSION 1.0.12: sin tuigreet en la distro (Ubuntu 24.04 / Mint) no se configura greetd;
 #   se conserva el gestor de sesion que ya hay.
 # VERSION 1.0.11: fixes para Mint/Ubuntu: meson >= 1.4 (ensure_meson), espera al candado de apt
@@ -81,7 +84,7 @@
 # ============================================================
 set +e
 
-VERSION="1.0.12"
+VERSION="1.0.13"
 BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -384,6 +387,11 @@ build_wlroots_fuente(){
     build_meson libxkbcommon https://github.com/xkbcommon/libxkbcommon.git xkbcommon-1.13.2 \
       -Denable-tools=false -Denable-x11=false -Denable-docs=false -Denable-xkbregistry=false -Denable-wayland=false || return 1
   else ok "xkbcommon $(pkg-config --modversion xkbcommon) ya cumple"; fi
+  # wlroots 0.20 solo compila el backend DRM si libdisplay-info >= 0.2.0. Ubuntu 24.04 / Mint 22
+  # trae 0.1.1: sin esto wlroots se compila SIN DRM y dwl no abre ("disabled at compile-time").
+  if ! pkg-config --atleast-version=0.2.0 libdisplay-info 2>/dev/null; then
+    build_meson libdisplay-info https://gitlab.freedesktop.org/emersion/libdisplay-info.git 0.2.0 || return 1
+  else ok "libdisplay-info $(pkg-config --modversion libdisplay-info) ya cumple"; fi
   build_meson wlroots https://gitlab.freedesktop.org/wlroots/wlroots.git "$_wt" -Dexamples=false || return 1
   # El enlazador dinamico debe ver /usr/local (las distros no lo incluyen todas)
   printf '/usr/local/lib\n/usr/local/lib64\n' | sudo tee /etc/ld.so.conf.d/dwl-wlroots.conf >/dev/null
