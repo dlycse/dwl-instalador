@@ -1,8 +1,10 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.16 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
+# install-dwl v1.0.17 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
 # REGLA DE VERSIONES: cada funcion nueva o problema resuelto sube 0.01
 # (1.0.5 -> 1.0.6 -> 1.0.7 ...). Al subir, cambia VERSION abajo y este encabezado.
+# VERSION 1.0.17: fix — Fedora/Nobara: foot 1.25+ avisa "[colors]: use [colors-dark]" en cada arranque;
+#   en Fedora el foot.ini usa [colors-dark]. Void/Arch/Debian siguen con [colors] (foot 1.21 no lo conoce).
 # VERSION 1.0.16: Fedora/Nobara: SDDM lanza 'dwl' por nombre; el binario real pasa a dwl-bin
 #   y 'dwl' es un envoltorio que ejecuta dwl-session. El runner escribe log en ~/.cache/dwl-runner.log.
 #   Solo afecta a Fedora/Nobara: Void, Arch y Debian siguen igual.
@@ -90,7 +92,7 @@
 # ============================================================
 set +e
 
-VERSION="1.0.16"
+VERSION="1.0.17"
 BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -941,12 +943,15 @@ ok "Tema dwlb escrito en $REAL_HOME/.config/dwlb/config"
 # ---------- Terminal foot transparente (como el st de la captura) ----------
 sudo -u "$REAL_USER" mkdir -p "$REAL_HOME/.config/foot"
 FOOT_INI="$REAL_HOME/.config/foot/foot.ini"
+# foot nuevo (Fedora 44 / Nobara) avisa que [colors] esta obsoleto y pide [colors-dark].
+# foot 1.21 (Debian 13) no conoce [colors-dark], asi que solo se cambia en Fedora.
+if [ "$FAMILIA" = "fedora" ]; then FOOT_COLORS_SEC="[colors-dark]"; else FOOT_COLORS_SEC="[colors]"; fi
 [ -f "$FOOT_INI" ] && [ ! -f "$FOOT_INI.bak" ] && cp "$FOOT_INI" "$FOOT_INI.bak"
 cat > "$FOOT_INI" <<EOF
 [main]
 font=JetBrainsMono Nerd Font:size=$DWLB_FONT_SIZE
 
-[colors]
+$FOOT_COLORS_SEC
 background=1a1b26
 foreground=c0caf5
 regular0=15161e
