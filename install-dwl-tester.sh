@@ -1,8 +1,10 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.13 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
+# install-dwl v1.0.14 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
 # REGLA DE VERSIONES: cada funcion nueva o problema resuelto sube 0.01
 # (1.0.5 -> 1.0.6 -> 1.0.7 ...). Al subir, cambia VERSION abajo y este encabezado.
+# VERSION 1.0.14: fix — wallpaperaccess.com da 403 en algunas redes (VirtualBox). Respaldo en
+#   Wikimedia Commons (CC BY-SA 4.0), valida JPEG/PNG y anota el origen en .wallpaper-instalador.
 # VERSION 1.0.13: fix — wlroots 0.20 compilaba SIN backend DRM (dwl: "disabled at compile-time")
 #   porque Ubuntu 24.04 / Mint 22 trae libdisplay-info 0.1.1 (wlroots pide >= 0.2.0). Ahora se
 #   compila libdisplay-info 0.2.0 desde fuente si el sistema no lo cumple.
@@ -84,7 +86,7 @@
 # ============================================================
 set +e
 
-VERSION="1.0.13"
+VERSION="1.0.14"
 BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -1064,16 +1066,37 @@ ok "Scripts de barra: dwlb-toggle (Super+W) y dwlb-flip (Super+Shift+W)"
 sudo -u "$REAL_USER" mkdir -p "$REAL_HOME/Pictures"
 # Se descarga si no hay fondo, o si el que hay lo puso este instalador antes
 # (marca .wallpaper-instalador). Un fondo que tu copiaste a mano no se toca.
+# Fuentes en orden: wallpaperaccess.com da 403 a algunas redes (p. ej. VirtualBox);
+# si falla, se usa Wikimedia Commons (CC BY-SA 4.0). Se valida que sea JPEG o PNG.
 WALL="$REAL_HOME/Pictures/wallpaper.jpg"
 WALL_MARK="$REAL_HOME/Pictures/.wallpaper-instalador"
+wallpaper_bajar(){
+  rm -f "$WALL.tmp"
+  curl -fsSL --max-time 60 -A "$2" -e "$3" -o "$WALL.tmp" "$1" 2>/dev/null || return 1
+  [ -s "$WALL.tmp" ] || return 1
+  case "$(head -c 4 "$WALL.tmp" | od -An -tx1 | tr -d ' \n')" in
+    ffd8ff*|89504e47) return 0 ;;
+  esac
+  return 1
+}
 if [ ! -f "$WALL" ] || [ -f "$WALL_MARK" ]; then
   info "Descargando wallpaper por defecto..."
-  if curl -fsSL --max-time 60 -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" -e "https://wallpaperaccess.com/" -o "$WALL.tmp" "https://wallpaperaccess.com/download/anime-4k-laptop-8523463" 2>/dev/null && [ -s "$WALL.tmp" ]; then
+  _origen=""
+  if wallpaper_bajar "https://wallpaperaccess.com/download/anime-4k-laptop-8523463" \
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" \
+      "https://wallpaperaccess.com/"; then
+    _origen="wallpaperaccess.com/download/anime-4k-laptop-8523463"
+  elif wallpaper_bajar "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/120408_Pheriche_Pano_4k.jpg/1920px-120408_Pheriche_Pano_4k.jpg" \
+      "install-dwl/1.0 (wallpaper por defecto)" "https://commons.wikimedia.org/"; then
+    _origen="Wikimedia Commons: 120408 Pheriche Pano 4k.jpg, CC BY-SA 4.0 (https://commons.wikimedia.org/wiki/File:120408_Pheriche_Pano_4k.jpg)"
+  fi
+  if [ -n "$_origen" ]; then
     mv -f "$WALL.tmp" "$WALL"
-    sudo -u "$REAL_USER" touch "$WALL_MARK"
+    printf '%s\n' "$_origen" | sudo -u "$REAL_USER" tee "$WALL_MARK" >/dev/null
+    ok "Wallpaper descargado de: $_origen"
   else
     rm -f "$WALL.tmp"
-    warn "Sin wallpaper: copia uno manual a ~/Pictures/wallpaper.jpg"
+    warn "No se pudo bajar el wallpaper (sin red o bloqueado). Copia una imagen a ~/Pictures/wallpaper.jpg"
   fi
   sudo chown "$REAL_USER:$REAL_USER" "$WALL" "$WALL_MARK" 2>/dev/null
 fi
