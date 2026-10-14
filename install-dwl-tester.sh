@@ -1,8 +1,10 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.21 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
+# install-dwl v1.0.22 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
 # REGLA DE VERSIONES: cada funcion nueva o problema resuelto sube 0.01
 # (1.0.5 -> 1.0.6 -> 1.0.7 ...). Al subir, cambia VERSION abajo y este encabezado.
+# VERSION 1.0.22: arreglo: el dwl actual pone el segundo layout en FLOTANTE; ahora se fija en monocle
+#   (parche que cubre el codigo nuevo y el antiguo de dwl.c). Super+Space pasa a mosaico <-> monocle.
 # VERSION 1.0.21: layouts solo con Super+Space (mosaico <-> monocle). Se quitan Super+M y Super+Shift+T;
 #   el segundo layout de dwl arranca en monocle (parche de dwl.c). Super+F sigue maximizando.
 # VERSION 1.0.20: foot: la seccion de colores se elige probando foot instalado ([colors-dark] o [colors]).
@@ -99,7 +101,7 @@
 # ============================================================
 set +e
 
-VERSION="1.0.21"
+VERSION="1.0.22"
 BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -884,10 +886,10 @@ else
   warn "No pude bajar el parche IPC (sin red?): la barra no marcara el tag activo"
 fi
 
-# 9) Super+Space: dwl crea los dos layouts de cada monitor en mosaico. Aqui el segundo
-#    arranca en monocle para que Super+Space tenga que alternar algo. Si el texto de dwl.c
-#    cambia, el aviso lo dira (y Super+Space solo alternara con mosaico).
-perl -0pi -e 's/m->lt\[0\] = m->lt\[1\] = r->layout;/m->lt[0] = r->layout;\n\tm->lt[1] = \&layouts[2];/' dwl.c
+# 9) Super+Space: dwl crea el segundo layout de cada monitor. Upstream actual lo pone en
+#    FLOTANTE (layouts[1]); aqui se fija en monocle (layouts[2]). Se cubren las dos formas
+#    del codigo (dwl nuevo y antiguo). Si ninguna coincide, el aviso lo dice.
+perl -0pi -e 's/m->lt\[1\] = &layouts\[LENGTH\(layouts\) > 1 && r->lt != &layouts\[1\]\];/m->lt[1] = &layouts[2];/; s/m->lt\[0\] = m->lt\[1\] = r->layout;/m->lt[0] = r->layout;\n\tm->lt[1] = \&layouts[2];/' dwl.c
 if grep -q 'm->lt\[1\] = &layouts\[2\];' dwl.c; then
   ok "  dwl.c: Super+Space alterna mosaico <-> monocle"
 else
