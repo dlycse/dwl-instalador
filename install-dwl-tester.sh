@@ -1,8 +1,10 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.19 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
+# install-dwl v1.0.20 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
 # REGLA DE VERSIONES: cada funcion nueva o problema resuelto sube 0.01
 # (1.0.5 -> 1.0.6 -> 1.0.7 ...). Al subir, cambia VERSION abajo y este encabezado.
+# VERSION 1.0.20: foot: la seccion de colores se elige probando foot instalado ([colors-dark] o [colors]).
+#   Arch (foot nuevo) daba "[colors]: invalid section name". Afecta a todas las distros por igual.
 # VERSION 1.0.19: Super+F alterna maximizar (togglefullscreen) y mosaico, en vez de monocle.
 # VERSION 1.0.18: mosaico siempre: se quitan los atajos de ventana flotante (Super+Shift+Espacio y
 #   Super+clic central) para que las ventanas no se superpongan. Solo cambia la compilacion de dwl.
@@ -95,7 +97,7 @@
 # ============================================================
 set +e
 
-VERSION="1.0.19"
+VERSION="1.0.20"
 BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -952,9 +954,21 @@ ok "Tema dwlb escrito en $REAL_HOME/.config/dwlb/config"
 # ---------- Terminal foot transparente (como el st de la captura) ----------
 sudo -u "$REAL_USER" mkdir -p "$REAL_HOME/.config/foot"
 FOOT_INI="$REAL_HOME/.config/foot/foot.ini"
-# foot nuevo (Fedora 44 / Nobara) avisa que [colors] esta obsoleto y pide [colors-dark].
-# foot 1.21 (Debian 13) no conoce [colors-dark], asi que solo se cambia en Fedora.
-if [ "$FAMILIA" = "fedora" ]; then FOOT_COLORS_SEC="[colors-dark]"; else FOOT_COLORS_SEC="[colors]"; fi
+# foot cambio el nombre de la seccion de colores: [colors] (foot antiguo, p. ej. 1.21 de Debian 13)
+# -> [colors-dark] (foot nuevo: Fedora 44 avisa, Arch la rechaza como error). En vez de adivinar
+# por distro, se pregunta a foot instalado cual acepta. Asi cada distro usa la que entiende.
+foot_colors_sec(){
+  _t="$(mktemp 2>/dev/null || echo /tmp/foot-probe.$$)"
+  printf '[colors-dark]\nbackground=000000\n' > "$_t"
+  _out="$(foot --check-config -c "$_t" 2>&1)"; _rc=$?
+  rm -f "$_t"
+  if [ "$_rc" -eq 0 ] && ! printf '%s' "$_out" | grep -qi 'invalid'; then
+    echo "[colors-dark]"
+  else
+    echo "[colors]"
+  fi
+}
+FOOT_COLORS_SEC="$(foot_colors_sec)"
 [ -f "$FOOT_INI" ] && [ ! -f "$FOOT_INI.bak" ] && cp "$FOOT_INI" "$FOOT_INI.bak"
 cat > "$FOOT_INI" <<EOF
 [main]
