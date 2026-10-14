@@ -1,8 +1,10 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.20 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
+# install-dwl v1.0.21 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
 # REGLA DE VERSIONES: cada funcion nueva o problema resuelto sube 0.01
 # (1.0.5 -> 1.0.6 -> 1.0.7 ...). Al subir, cambia VERSION abajo y este encabezado.
+# VERSION 1.0.21: layouts solo con Super+Space (mosaico <-> monocle). Se quitan Super+M y Super+Shift+T;
+#   el segundo layout de dwl arranca en monocle (parche de dwl.c). Super+F sigue maximizando.
 # VERSION 1.0.20: foot: la seccion de colores se elige probando foot instalado ([colors-dark] o [colors]).
 #   Arch (foot nuevo) daba "[colors]: invalid section name". Afecta a todas las distros por igual.
 # VERSION 1.0.19: Super+F alterna maximizar (togglefullscreen) y mosaico, en vez de monocle.
@@ -97,7 +99,7 @@
 # ============================================================
 set +e
 
-VERSION="1.0.20"
+VERSION="1.0.21"
 BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -815,6 +817,10 @@ else
 fi
 rm -f "$KEYS_FILE"
 
+# 8) Layouts: solo Super+Space. Se quitan Super+M (monocle) y Super+Shift+T (mosaico),
+#    y el segundo layout de dwl arranca en monocle, asi Super+Space alterna mosaico <-> monocle.
+apply_patch "quita Super+M y Super+Shift+T (solo Super+Space)" '/XKB_KEY_m,.*setlayout/d;/XKB_KEY_t,.*setlayout/d'
+
 # 8) Rueda del raton + Super = volumen (los ejes vienen vacios en dwl)
 apply_patch "volumen con Super+rueda" \
   's|^\([[:space:]]*\){ 0, 0, NULL, {0} },|\1{ MODKEY, AxisUp,   spawn, SHCMD("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+") },\n\1{ MODKEY, AxisDown, spawn, SHCMD("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-") },\n\1{ 0, 0, NULL, {0} },|'
@@ -876,6 +882,16 @@ if curl -fsSL https://codeberg.org/dwl/dwl-patches/raw/branch/main/patches/ipc/i
   fi
 else
   warn "No pude bajar el parche IPC (sin red?): la barra no marcara el tag activo"
+fi
+
+# 9) Super+Space: dwl crea los dos layouts de cada monitor en mosaico. Aqui el segundo
+#    arranca en monocle para que Super+Space tenga que alternar algo. Si el texto de dwl.c
+#    cambia, el aviso lo dira (y Super+Space solo alternara con mosaico).
+perl -0pi -e 's/m->lt\[0\] = m->lt\[1\] = r->layout;/m->lt[0] = r->layout;\n\tm->lt[1] = \&layouts[2];/' dwl.c
+if grep -q 'm->lt\[1\] = &layouts\[2\];' dwl.c; then
+  ok "  dwl.c: Super+Space alterna mosaico <-> monocle"
+else
+  warn "  dwl.c: no encontre donde fijar monocle como segundo layout (Super+Space no alternara)"
 fi
 
 make clean 2>/dev/null
@@ -1168,9 +1184,8 @@ cat > "$REAL_HOME/Atajos.txt" <<'ATAJ'
    Super + , / Super + .    Monitor anterior / siguiente
 
  LAYOUTS
-   Super + Shift + T        Tiling (el de siempre)
    Super + F                Maximizar / restaurar la ventana (alterna con mosaico)
-   Super + Espacio          Volver al layout anterior
+   Super + Espacio          Alterna mosaico <-> monocle (unico atajo de layout)
 
  BARRA
    Super + W                Ocultar / mostrar la barra
