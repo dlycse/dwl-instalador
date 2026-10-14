@@ -1,8 +1,12 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.8 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
+# install-dwl v1.0.12 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
 # REGLA DE VERSIONES: cada funcion nueva o problema resuelto sube 0.01
 # (1.0.5 -> 1.0.6 -> 1.0.7 ...). Al subir, cambia VERSION abajo y este encabezado.
+# VERSION 1.0.12: sin tuigreet en la distro (Ubuntu 24.04 / Mint) no se configura greetd;
+#   se conserva el gestor de sesion que ya hay.
+# VERSION 1.0.11: fixes para Mint/Ubuntu: meson >= 1.4 (ensure_meson), espera al candado de apt
+#   (APT_LOCK) y solo se piden paquetes con candidato instalable (apt_disponible).
 # VERSION 1.0.8: fix — foot 1.21 (Debian 13) no conoce [colors-dark] ni alpha-mode:
 #   se usa [colors] y solo alpha. Validado con foot --check-config.
 # VERSION 1.0.7: fix — wayland necesita libxml2 (dtd_validation, por defecto activo):
@@ -77,7 +81,7 @@
 # ============================================================
 set +e
 
-VERSION="1.0.8"
+VERSION="1.0.12"
 BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -193,7 +197,7 @@ wlr_ultima_tag(){
 if [ "$FAMILIA" = "debian" ]; then
   [ -d /run/systemd/system ] || err "Este instalador necesita systemd (tu sistema no lo usa)."
   info "Actualizando indice de APT..."
-  sudo apt-get update -qq >/dev/null 2>&1 || warn "apt-get update reporto errores (revisa la red)"
+  sudo apt-get $APT_LOCK update -qq >/dev/null 2>&1 || warn "apt-get update reporto errores (revisa la red)"
 fi
 
 # ---------- Espacio libre ----------
@@ -265,6 +269,13 @@ else
   warn "No encontre la zona '$TZIN'; se deja la que ya tenias"
 fi
 
+# Un paquete es "disponible" si tiene candidato instalable. Ojo: apt-cache show puede
+# mostrar un paquete sin candidato (firefox-esr en Mint); eso no es disponible.
+apt_disponible(){
+  _c="$(apt-cache policy "$1" 2>/dev/null | awk '/Candidat|Candidate/{print $2; exit}')"
+  [ -n "$_c" ] && [ "$_c" != "(ninguno)" ] && [ "$_c" != "(none)" ]
+}
+
 # ---------- Gestor de sesion ya instalado (lightdm, gdm, sddm...) ----------
 # Si ya hay uno, se pregunta: cambiarlo a greetd + tuigreet, o dejar el que hay
 # (dwl aparece en su menu de sesion). Por defecto (Enter) se deja el que hay.
@@ -276,7 +287,17 @@ for DM in lightdm gdm gdm3 sddm xdm lxdm; do
 done
 DM_FOUND="${DM_FOUND# }"
 USE_GREETD=1
-if [ -n "$DM_FOUND" ]; then
+GREETER_OK=1
+if [ "$FAMILIA" = "debian" ] && ! apt_disponible tuigreet; then GREETER_OK=0; fi
+if [ "$GREETER_OK" = 0 ]; then
+  USE_GREETD=0
+  warn "tuigreet no esta en los repos de tu distro (Ubuntu 24.04 y Mint lo no traen): no se configura greetd."
+  if [ -n "$DM_FOUND" ]; then
+    ok "Se conserva tu gestor de sesion: $DM_FOUND. Elige dwl en su menu."
+  else
+    warn "No tienes gestor de sesion: instala lightdm o gdm para entrar a dwl."
+  fi
+elif [ -n "$DM_FOUND" ]; then
   echo
   warn "Ya tienes un gestor de sesion instalado: $DM_FOUND"
   if confirm "Cambiarlo a greetd + tuigreet? (N = dejar $DM_FOUND y elegir dwl en su menu)"; then
@@ -295,6 +316,8 @@ fi
 # dependencias van fijadas por tag; wlroots toma la 0.20.x mas reciente (wlr_ultima_tag).
 # Todo va a /usr/local, y PKG_CONFIG_PATH + ld.so.conf lo hacen visible en cualquier distro.
 WLR_SRC_DIR=/tmp/dwl-wlroots-src
+# apt espera hasta 15 min si otro proceso (gestor de actualizaciones) tiene el candado de dpkg
+APT_LOCK="-o DPkg::Lock::Timeout=900"
 WLR_LOG=/tmp/dwl-wlroots-build.log
 build_meson(){
   _n="$1"; _u="$2"; _t="$3"; shift 3
@@ -308,9 +331,34 @@ build_meson(){
   sudo ninja -C "$WLR_SRC_DIR/$_n/build" install >>"$WLR_LOG" 2>&1 || return 1
   ok "$_n $_t instalado en /usr/local"
 }
+meson_ok(){
+  case "$(meson --version 2>/dev/null)" in
+    1.[4-9].*|1.[1-9][0-9]*|[2-9].*) return 0 ;;
+  esac
+  return 1
+}
+# meson >= 1.4 (libxkbcommon 1.13 lo pide). Si el sistema trae uno viejo (Ubuntu 24.04 / Mint 22: 1.3.2),
+# se instala uno nuevo aislado en /opt/dwl-meson y se enlaza en /usr/local/bin. El de apt no se toca.
+ensure_meson(){
+  if meson_ok; then ok "meson $(meson --version) cumple (>= 1.4)"; return 0; fi
+  _mv="$(meson --version 2>/dev/null)"; [ -n "$_mv" ] || _mv="no instalado"
+  warn "meson $_mv no sirve: libxkbcommon necesita >= 1.4. Instalo uno nuevo aislado en /opt/dwl-meson..."
+  if [ "$FAMILIA" = "debian" ]; then
+    sudo DEBIAN_FRONTEND=noninteractive apt-get $APT_LOCK -y install python3-venv >/dev/null 2>&1 || return 1
+  fi
+  # El registro lo escribe el usuario; sudo solo ejecuta (como en build_meson)
+  # shellcheck disable=SC2024
+  sudo python3 -m venv /opt/dwl-meson >>"$WLR_LOG" 2>&1 || return 1
+  # shellcheck disable=SC2024
+  sudo /opt/dwl-meson/bin/pip install -q 'meson>=1.4' >>"$WLR_LOG" 2>&1 || return 1
+  sudo ln -sf /opt/dwl-meson/bin/meson /usr/local/bin/meson
+  meson_ok || return 1
+  ok "meson $(meson --version) instalado en /opt/dwl-meson"
+}
 build_wlroots_fuente(){
   _wt="$1"
   mkdir -p "$WLR_SRC_DIR"; : > "$WLR_LOG"
+  ensure_meson || { warn "No se pudo conseguir meson >= 1.4 (mira $WLR_LOG)"; return 1; }
   # Los .pc de /usr/local no estan en el camino de pkg-config de todas las distros
   PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/local/lib64/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
   export PKG_CONFIG_PATH
@@ -527,18 +575,18 @@ elif [ "$FAMILIA" = "debian" ]; then
     # Build-Depends de wlroots (Debian sid) + lo que piden wayland, libdrm, pixman y xkbcommon
     DEB_PKGS="$DEB_PKGS meson ninja-build pkgconf libffi-dev libexpat1-dev libxml2-dev libudev-dev libsystemd-dev libcap-dev libegl-dev libegl1-mesa-dev libgbm-dev libgles2-mesa-dev libvulkan-dev libcairo2-dev libpng-dev liblcms2-dev glslang-tools hwdata libdisplay-info-dev libliftoff-dev libinput-dev libseat-dev libpciaccess-dev bison flex libx11-xcb-dev libxcb1-dev libxcb-composite0-dev libxcb-dri3-dev libxcb-errors-dev libxcb-ewmh-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-present-dev libxcb-render-util0-dev libxcb-render0-dev libxcb-res0-dev libxcb-shm0-dev libxcb-xfixes0-dev libxcb-xinput-dev libxkbcommon-dev libwayland-dev xwayland"
   fi
-  # Solo se piden los paquetes que existen en tu version (apt-cache show)
+  # Solo se piden los paquetes con candidato instalable en tu version (apt_disponible)
   DEB_OK=""; DEB_NO=""
   for p in $DEB_PKGS; do
-    if apt-cache show "$p" >/dev/null 2>&1; then DEB_OK="$DEB_OK $p"; else DEB_NO="$DEB_NO $p"; fi
+    if apt_disponible "$p"; then DEB_OK="$DEB_OK $p"; else DEB_NO="$DEB_NO $p"; fi
   done
   [ -n "$DEB_NO" ] && warn "No estan en los repos de tu version, se omiten:$DEB_NO"
   # 1º intento: todo junto (rapido). Si falla: uno a uno (robusto), como en Arch.
   # shellcheck disable=SC2086
-  if ! sudo DEBIAN_FRONTEND=noninteractive apt-get install -y $DEB_OK; then
+  if ! sudo DEBIAN_FRONTEND=noninteractive apt-get $APT_LOCK install -y $DEB_OK; then
     warn "apt no pudo instalar todo junto: reintento uno a uno"
     for p in $DEB_OK; do
-      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$p" >/dev/null 2>&1 || warn "No se pudo instalar: $p"
+      sudo DEBIAN_FRONTEND=noninteractive apt-get $APT_LOCK install -y "$p" >/dev/null 2>&1 || warn "No se pudo instalar: $p"
     done
   fi
   if [ "$WLR_MODO" = repo ]; then
@@ -1423,7 +1471,7 @@ INI
 fi
 else
   # El usuario eligio mantener su gestor: no se toca greetd ni los gestores actuales
-  info "Gestor conservado: $DM_FOUND. Tu sesion dwl aparece en su menu de sesion."
+  info "Login: greetd no se configura aqui (ver arriba)."
 fi
 
 # --- 9) Resumen final ---
@@ -1431,8 +1479,13 @@ hdr "INSTALACION COMPLETA"
 printf "\n  %sUNICO PASO RESTANTE:%s\n\n" "$YEL$B" "$R"
 printf "      %s%ssudo reboot%s\n\n" "$B" "$YEL" "$R"
 if [ "$USE_GREETD" = 0 ]; then
-  echo " Mantienes tu gestor de sesion ($DM_FOUND): greetd no se ha tocado."
-  echo " Al reiniciar entra con ese gestor y elige 'dwl' en el menu de sesion."
+  if [ -n "$DM_FOUND" ]; then
+    echo " Mantienes tu gestor de sesion ($DM_FOUND): greetd no se ha tocado."
+    echo " Al reiniciar entra con ese gestor y elige 'dwl' en el menu de sesion."
+  else
+    echo " greetd no se configuro (tuigreet no esta en tu distro) y no hay gestor de sesion."
+    echo " Instala lightdm o gdm (sudo apt install lightdm) para entrar a dwl."
+  fi
   echo
 elif [ "${DEFERRED:-0}" -eq 1 ]; then
   echo " Modo seguro (estabas dentro de una sesion):"
