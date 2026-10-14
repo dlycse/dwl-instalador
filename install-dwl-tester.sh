@@ -1,8 +1,11 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.17 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
+# install-dwl v1.0.19 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
 # REGLA DE VERSIONES: cada funcion nueva o problema resuelto sube 0.01
 # (1.0.5 -> 1.0.6 -> 1.0.7 ...). Al subir, cambia VERSION abajo y este encabezado.
+# VERSION 1.0.19: Super+F alterna maximizar (togglefullscreen) y mosaico, en vez de monocle.
+# VERSION 1.0.18: mosaico siempre: se quitan los atajos de ventana flotante (Super+Shift+Espacio y
+#   Super+clic central) para que las ventanas no se superpongan. Solo cambia la compilacion de dwl.
 # VERSION 1.0.17: fix — Fedora/Nobara: foot 1.25+ avisa "[colors]: use [colors-dark]" en cada arranque;
 #   en Fedora el foot.ini usa [colors-dark]. Void/Arch/Debian siguen con [colors] (foot 1.21 no lo conoce).
 # VERSION 1.0.16: Fedora/Nobara: SDDM lanza 'dwl' por nombre; el binario real pasa a dwl-bin
@@ -92,7 +95,7 @@
 # ============================================================
 set +e
 
-VERSION="1.0.17"
+VERSION="1.0.19"
 BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -780,13 +783,19 @@ apply_patch "terminal Super+Enter" \
 # 5) Cerrar ventana con Super+Q (dwl trae Super+Shift+C)
 apply_patch "cerrar Super+Q" \
   's/MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_c,\(.*\)killclient/MODKEY,                    XKB_KEY_q,\1killclient/'
-# 6) Super+F = monocle (dwl trae ahi el modo flotante)
-apply_patch "monocle Super+F" 's/XKB_KEY_f,\(.*\)&layouts\[1\]/XKB_KEY_f,\1\&layouts[2]/'
+# 6) Super+F = maximizar / restaurar (togglefullscreen, ver keys[] abajo).
+#    Ya no se cambia el layout monocle: el atajo alterna con el mosaico.
+
+# 6b) Solo mosaico: se quitan los atajos que alternan ventanas flotantes
+#     (teclado Super+Shift+Espacio y raton Super+clic central). Asi las ventanas
+#     nunca se superponen. Super+F maximiza y restaura (togglefullscreen).
+apply_patch "sin flotantes (quita togglefloating de teclado y raton)" '/togglefloating/d'
 
 # 7) Atajos extra: se insertan AL PRINCIPIO de keys[] (dwl usa la primera
 #    coincidencia, asi que ganan a los de por defecto).
 KEYS_FILE="$(mktemp 2>/dev/null || echo /tmp/dwl-keys.$$)"
 cat > "$KEYS_FILE" <<KEYS
+	{ MODKEY,                    XKB_KEY_f,           togglefullscreen, {0} },
 	{ MODKEY,                    XKB_KEY_b,           spawn,            SHCMD("firefox &") },
 	{ MODKEY,                    XKB_KEY_r,           spawn,            SHCMD("foot -e lf &") },
 	{ MODKEY,                    XKB_KEY_t,           spawn,            {.v = termcmd} },
@@ -1134,7 +1143,6 @@ cat > "$REAL_HOME/Atajos.txt" <<'ATAJ'
    Super + Q                Cerrar la ventana
    Super + J / Super + K    Siguiente / anterior ventana
    Super + H / Super + L    Achicar / agrandar el area maestra
-   Super + Shift + Espacio  Ventana flotante
    Super + Shift + F        Pantalla completa
 
  TAGS (escritorios)
@@ -1147,7 +1155,7 @@ cat > "$REAL_HOME/Atajos.txt" <<'ATAJ'
 
  LAYOUTS
    Super + Shift + T        Tiling (el de siempre)
-   Super + F                Monocle (una ventana a la vez)
+   Super + F                Maximizar / restaurar la ventana (alterna con mosaico)
    Super + Espacio          Volver al layout anterior
 
  BARRA
@@ -1163,7 +1171,6 @@ cat > "$REAL_HOME/Atajos.txt" <<'ATAJ'
 
  RATON
    Super + clic izquierdo   Mover la ventana
-   Super + clic central     Volverla flotante
    Super + clic derecho     Redimensionar
 
 ------------------------------------------------
