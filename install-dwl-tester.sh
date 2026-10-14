@@ -1,8 +1,11 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.15 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
+# install-dwl v1.0.16 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
 # REGLA DE VERSIONES: cada funcion nueva o problema resuelto sube 0.01
 # (1.0.5 -> 1.0.6 -> 1.0.7 ...). Al subir, cambia VERSION abajo y este encabezado.
+# VERSION 1.0.16: Fedora/Nobara: SDDM lanza 'dwl' por nombre; el binario real pasa a dwl-bin
+#   y 'dwl' es un envoltorio que ejecuta dwl-session. El runner escribe log en ~/.cache/dwl-runner.log.
+#   Solo afecta a Fedora/Nobara: Void, Arch y Debian siguen igual.
 # VERSION 1.0.15: fix — Nobara (ID=nobara, ID_LIKE=fedora) no era reconocido; ahora es familia fedora.
 # VERSION 1.0.14: fix — wallpaperaccess.com da 403 en algunas redes (VirtualBox). Respaldo en
 #   Wikimedia Commons (CC BY-SA 4.0), valida JPEG/PNG y anota el origen en .wallpaper-instalador.
@@ -87,7 +90,7 @@
 # ============================================================
 set +e
 
-VERSION="1.0.15"
+VERSION="1.0.16"
 BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
 
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -874,6 +877,13 @@ if ! make; then
   make || err "Error compilando dwl. Mira el error de arriba (suele ser wlroots)."
 fi
 sudo make install
+if [ "$FAMILIA" = "fedora" ]; then
+  # SDDM lanza 'dwl' por nombre: el binario real pasa a dwl-bin y 'dwl' es un envoltorio
+  sudo mv -f /usr/local/bin/dwl /usr/local/bin/dwl-bin
+  printf '#!/bin/sh\nexec /usr/local/bin/dwl-session "$@"\n' | sudo tee /usr/local/bin/dwl >/dev/null
+  sudo chmod +x /usr/local/bin/dwl
+  ok "Fedora: dwl-bin (binario) + dwl (envoltorio para SDDM)"
+fi
 if [ "$IPC_OK" = 1 ]; then
   sudo mkdir -p /usr/local/share/dwl && sudo touch /usr/local/share/dwl/ipc
   ok "dwl compilado e instalado (con parche IPC: pastilla del tag activo)"
@@ -1169,6 +1179,13 @@ hdr "SESION DWL"
 # ---------- Script de sesion dwl ----------
 info "Creando script de sesion..."
 grep -qw hypervisor /proc/cpuinfo && VM_FLAGS="export WLR_NO_HARDWARE_CURSORS=1 WLR_RENDERER=pixman" || VM_FLAGS=""
+# Fedora: SDDM lanza el binario 'dwl' (envoltorio), y el real es dwl-bin. El runner
+# escribe su salida en ~/.cache/dwl-runner.log. Las demas distros no cambian.
+if [ "$FAMILIA" = "fedora" ]; then
+  DWL_EXEC='dwl-bin -s "/usr/local/bin/dwl-status-runner >$HOME/.cache/dwl-runner.log 2>&1"'
+else
+  DWL_EXEC="dwl -s /usr/local/bin/dwl-status-runner"
+fi
 sudo tee /usr/local/bin/dwl-session >/dev/null <<EOF
 #!/bin/sh
 export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=dwl MOZ_ENABLE_WAYLAND=1 QT_QPA_PLATFORM=wayland GDK_BACKEND=wayland,x11 XKB_DEFAULT_LAYOUT=$KB_LAYOUT
@@ -1188,7 +1205,7 @@ trap clean EXIT
 start_daemon pipewire pipewire
 start_daemon wireplumber wireplumber
 command -v pipewire-pulse >/dev/null && start_daemon pipewire-pulse pipewire-pulse
-dwl -s /usr/local/bin/dwl-status-runner
+$DWL_EXEC
 clean
 EOF
 sudo chmod +x /usr/local/bin/dwl-session
@@ -1203,6 +1220,13 @@ sudo tee /usr/local/bin/dwlb-rebuild >/dev/null <<'RB'; sudo chmod +x /usr/local
 #!/bin/sh
 set -e; cd "$HOME/dwlb"; git pull --ff-only; make clean; make; sudo make install; echo "dwlb recompilado, reinicia sesion."
 RB
+# Fedora: dwl-rebuild no debe pisar el envoltorio; instala solo el binario en dwl-bin
+if [ "$FAMILIA" = "fedora" ]; then
+sudo tee /usr/local/bin/dwl-rebuild >/dev/null <<'RB'; sudo chmod +x /usr/local/bin/dwl-rebuild
+#!/bin/sh
+set -e; cd "$HOME/dwl"; make clean; make; sudo install -m755 dwl /usr/local/bin/dwl-bin; echo "dwl recompilado, reinicia sesion."
+RB
+fi
 
 # ---------- Entrada de sesion Wayland ----------
 sudo mkdir -p /usr/share/wayland-sessions
