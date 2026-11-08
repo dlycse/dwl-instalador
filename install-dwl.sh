@@ -489,7 +489,7 @@ elif [ "$FAMILIA" = "debian" ]; then
     libwayland-dev wayland-protocols libxkbcommon-dev libinput-dev libseat-dev seatd
     xwayland libgl1-mesa-dri libdrm-dev libpango1.0-dev libcairo2-dev libpixman-1-dev
     libgudev-1.0-dev libfcft-dev libtllist-dev
-    foot wmenu fastfetch pipewire wireplumber pipewire-alsa pipewire-pulse
+    foot wmenu fastfetch pipewire pipewire-bin wireplumber pipewire-alsa pipewire-pulse
     swaybg swaylock grim slurp wl-clipboard brightnessctl lf mpv zathura zathura-pdf-poppler
     xdg-utils imv chrony firefox-esr btop cowsay dbus-daemon
     greetd tuigreet fonts-jetbrains-mono"
