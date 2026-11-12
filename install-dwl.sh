@@ -1,11 +1,11 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.32 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu) 
+# install-dwl v1.0.41 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
 # ============================================================
 set +e
 
-VERSION="1.0.32"
-BUILD="Estable (correcciones de revision: greetd, grupos, Arch, Void, zona horaria)"
+VERSION="1.0.41"
+BUILD="prueba (revision de dudas: version fijada, checksum, Void, Fedora, chuleta)"
 
 APT_LOCK="-o DPkg::Lock::Timeout=900"
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -219,7 +219,7 @@ GREETER_OK=1
 if [ "$FAMILIA" = "debian" ] && ! apt_disponible tuigreet; then GREETER_OK=0; fi
 if [ "$GREETER_OK" = 0 ]; then
   USE_GREETD=0
-  warn "tuigreet no esta en los repos de tu distro (Ubuntu 24.04 y Mint lo no traen): no se configura greetd."
+  warn "tuigreet no esta en los repos de tu distro (Ubuntu 24.04 y Mint no lo traen): no se configura greetd."
   if [ -n "$DM_FOUND" ]; then
     ok "Se conserva tu gestor de sesion: $DM_FOUND. Elige dwl en su menu."
   else
@@ -377,7 +377,9 @@ if [ "$FAMILIA" = "void" ]; then
   fi
   info "Instalando paquetes base para Void Linux..."
   # shellcheck disable=SC2086
-  sudo xbps-install -Sy base-devel git libinput-devel wayland-devel wayland-protocols libxkbcommon-devel $VOID_WLR $VOID_BUILD libseat-devel seatd xorg-server-xwayland mesa-dri libdrm-devel pango-devel cairo-devel pixman-devel libgudev-devel fcft-devel tllist foot wmenu fastfetch pipewire wireplumber alsa-pipewire swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd tuigreet turnstile || err "Fallo instalando paquetes."
+  VOID_PKGS="base-devel git libinput-devel wayland-devel wayland-protocols libxkbcommon-devel $VOID_WLR $VOID_BUILD libseat-devel seatd xorg-server-xwayland mesa-dri libdrm-devel pango-devel cairo-devel pixman-devel libgudev-devel fcft-devel tllist foot wmenu fastfetch pipewire wireplumber alsa-pipewire swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd tuigreet turnstile"
+  # shellcheck disable=SC2086
+  sudo xbps-install -Sy $VOID_PKGS || for p in $VOID_PKGS; do sudo xbps-install -Sy "$p" >/dev/null 2>&1 || warn "No se pudo instalar: $p"; done
   GREETER_USER="greetd"
   SEAT_GROUP="_seatd"
 
@@ -668,6 +670,10 @@ info "Compilando dwl..."
 cd "$REAL_HOME" || err "No existe $REAL_HOME"
 [ ! -d dwl ] && sudo -u "$REAL_USER" git clone https://codeberg.org/dwl/dwl.git
 cd dwl || err "No se pudo entrar en $REAL_HOME/dwl"
+# Version fijada (1.0.35): dwl main en el commit que se verifico (anclas de config.def.h, dwl.c y config.mk).
+DWL_COMMIT="01db8aea354fe38dea5d4db82285d7dd51b99385"
+sudo -u "$REAL_USER" git cat-file -e "$DWL_COMMIT" 2>/dev/null || sudo -u "$REAL_USER" git fetch -q origin
+sudo -u "$REAL_USER" git checkout -q --detach "$DWL_COMMIT" || warn "No pude fijar dwl a $DWL_COMMIT: se usa el dwl que haya en ~/dwl."
 [ "$(stat -c %U . 2>/dev/null)" != "$REAL_USER" ] && sudo chown -R "$REAL_USER:$REAL_USER" .
 rm -f config.h
 cp config.def.h config.h
@@ -725,9 +731,7 @@ cat > "$KEYS_FILE" <<KEYS
 	{ MODKEY,                    XKB_KEY_t,           spawn,            {.v = termcmd} },
 	{ MODKEY,                    XKB_KEY_w,           spawn,            SHCMD("/usr/local/bin/dwlb-toggle") },
 	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_w,           spawn,            SHCMD("/usr/local/bin/dwlb-flip") },
-	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_f,           togglefullscreen, {0} },
 	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_e,           quit,             {0} },
-	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_t,           setlayout,        {.v = &layouts[0]} },
 KEYS
 if grep -q '^static const Key keys\[\] = {' config.h; then
   sed -i "/^static const Key keys\[\] = {/r $KEYS_FILE" config.h
@@ -737,9 +741,9 @@ else
 fi
 rm -f "$KEYS_FILE"
 
-# 8) Layouts: solo Super+Space. Se quitan Super+M (monocle) y Super+Shift+T (mosaico),
+# 8) Layouts: solo Super+Space. Se quitan los setlayout de Super+M (monocle) y Super+T (mosaico) de dwl,
 #    y el segundo layout de dwl arranca en monocle, asi Super+Space alterna mosaico <-> monocle.
-apply_patch "quita Super+M y Super+Shift+T (solo Super+Space)" '/XKB_KEY_m,.*setlayout/d;/XKB_KEY_t,.*setlayout/d'
+apply_patch "quita Super+M y Super+T setlayout de dwl (solo Super+Space)" '/XKB_KEY_m,.*setlayout/d;/XKB_KEY_t,.*setlayout/d'
 
 # 8) Rueda del raton + Super = volumen (los ejes vienen vacios en dwl)
 apply_patch "volumen con Super+rueda" \
@@ -773,7 +777,9 @@ for c in patch perl awk sed curl; do
 done
 git checkout -q -- Makefile dwl.c config.def.h 2>/dev/null
 rm -f protocols/dwl-ipc-unstable-v2.xml dwl.c.rej dwl.c.orig
-if curl -fsSL https://codeberg.org/dwl/dwl-patches/raw/branch/main/patches/ipc/ipc.patch -o /tmp/dwl-ipc.patch 2>/dev/null; then
+# 1.0.36: parche IPC fijado a commit y verificado con sha256 (antes: rama main sin checksum)
+if curl -fsSL https://codeberg.org/dwl/dwl-patches/raw/commit/fd5e06a50dfba552c0d3b34eba6a2ed656726f5c/patches/ipc/ipc.patch -o /tmp/dwl-ipc.patch 2>/dev/null \
+   && echo "9d553e3956cd35960ec31d1375fc256ab7bee605d1912d491716c9830a783ca6  /tmp/dwl-ipc.patch" | sha256sum -c - >/dev/null 2>&1; then
   patch -p1 -N --no-backup-if-mismatch < /tmp/dwl-ipc.patch >/tmp/dwl-ipc.log 2>&1
   # Un bloque (prototipos dwl_ipc_*) no encaja en dwl main: se inserta a mano
   if [ -f dwl.c.rej ]; then
@@ -1093,7 +1099,6 @@ cat > "$REAL_HOME/Atajos.txt" <<'ATAJ'
    Super + Q                Cerrar la ventana
    Super + J / Super + K    Siguiente / anterior ventana
    Super + H / Super + L    Achicar / agrandar el area maestra
-   Super + Shift + F        Pantalla completa
 
  TAGS (escritorios)
    Super + 1..9             Ir a ese tag
@@ -1142,7 +1147,10 @@ info "Creando script de sesion..."
 grep -qw hypervisor /proc/cpuinfo && VM_FLAGS="export WLR_NO_HARDWARE_CURSORS=1 WLR_RENDERER=pixman" || VM_FLAGS=""
 # Fedora: SDDM lanza el binario 'dwl' (envoltorio), y el real es dwl-bin. El runner
 # escribe su salida en ~/.cache/dwl-runner.log. Las demas distros no cambian.
+# 1.0.39: en Fedora, ~/.cache debe existir ANTES de abrir el log (el mkdir del runner llega tarde)
+DWL_PRE=""
 if [ "$FAMILIA" = "fedora" ]; then
+  DWL_PRE='mkdir -p "$HOME/.cache"'
   DWL_EXEC='dwl-bin -s "/usr/local/bin/dwl-status-runner >$HOME/.cache/dwl-runner.log 2>&1"'
 else
   DWL_EXEC="dwl -s /usr/local/bin/dwl-status-runner"
@@ -1166,6 +1174,7 @@ trap clean EXIT
 start_daemon pipewire pipewire
 start_daemon wireplumber wireplumber
 command -v pipewire-pulse >/dev/null && start_daemon pipewire-pulse pipewire-pulse
+$DWL_PRE
 $DWL_EXEC
 clean
 EOF
@@ -1550,5 +1559,5 @@ echo "          Super+Shift+e salir de sesion"
 line
 [ "${FINAL_ERROR:-0}" -eq 1 ] && err "Revisa los errores de arriba antes de reiniciar."
 ok "Instalacion v$VERSION completada. Realiza ${B}sudo reboot${R} para cargar todo sin problema."
-rm -rf ~/dwl-instalador
+rm -rf "${REAL_HOME:?}/dwl-instalador"
 exit 0
