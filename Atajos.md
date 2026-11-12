@@ -1,6 +1,6 @@
 # ⌨️ Atajos de teclado — dwl + dwlb
 
-Lista de los atajos que **realmente configura** el instalador (v1.0.22).
+Lista de los atajos que **realmente configura** el instalador (**v1.0.41**). Si algo de aquí no coincide con tu equipo, tu copia del instalador es anterior: vuelve a ejecutarlo.
 
 > **¿Qué es "Super"?** Es la tecla con el logo de **Windows** ⊞ (en teclados de Mac es **⌘ Command**).
 
@@ -9,6 +9,8 @@ Lista de los atajos que **realmente configura** el instalador (v1.0.22).
 > ```bash
 > nano ~/Atajos.txt
 > ```
+
+> ⚠️ **Estado de prueba:** los cambios de 1.0.23 a 1.0.41 están pendientes de prueba en cada distro. Los atajos marcados con *(pendiente de prueba)* no están confirmados en ningún equipo.
 
 ---
 
@@ -34,7 +36,7 @@ Lista de los atajos que **realmente configura** el instalador (v1.0.22).
 | **Mosaico** | Layout normal: las ventanas se reparten automáticamente por la pantalla. |
 | **Monocle** | Layout donde **una sola ventana** ocupa el área de trabajo. Las demás quedan detrás. |
 | **Maximizar** | Ocupar toda la pantalla con la ventana enfocada. Al volver a pulsar, regresa al mosaico. |
-| **Barra** | La línea de arriba (**dwlb**): tags, layout, CPU, RAM, volumen, batería y hora. |
+| **Barra** | La línea de arriba (**dwlb**): tags, CPU, RAM, volumen y hora. |
 
 ---
 
@@ -61,10 +63,9 @@ Lista de los atajos que **realmente configura** el instalador (v1.0.22).
 | `Super` + `L` | Hacer el área maestra **más ancha** |
 | `Super` + `I` | Meter **una ventana más** en el área maestra |
 | `Super` + `F` | **Maximizar / restaurar** la ventana (pulsa de nuevo para volver al mosaico) |
-| `Super` + `Shift` + `F` | **Pantalla completa** |
-| `Super` + `E` | **Pantalla completa**, igual que `Super` + `Shift` + `F` (atajo de dwl por defecto) |
+| `Super` + `E` | **Pantalla completa** (mismo efecto que `Super` + `F`, atajo de dwl) |
 
-> ℹ️ **Ventanas flotantes:** no hay atajo para ponerlas en flotante. Algunas ventanas, como los diálogos de una aplicación, pueden aparecer flotantes porque así lo decide dwl.
+> ℹ️ **Sin ventanas flotantes:** no hay atajo de teclado ni de ratón para ponerlas en flotante (se quitaron en 1.0.18). Algunas ventanas, como ciertos diálogos, pueden aparecer flotantes porque así lo decide la aplicación o dwl.
 
 ---
 
@@ -74,7 +75,7 @@ Lista de los atajos que **realmente configura** el instalador (v1.0.22).
 |---|---|
 | `Super` + `Space` | **Alterna** entre **mosaico** y **monocle** |
 
-> ℹ️ Solo existe este atajo de layout. `Super` + `M` (monocle) y `Super` + `Shift` + `T` (mosaico) se quitaron en la v1.0.21.
+> ℹ️ Es el único atajo de layout. `Super` + `M` (monocle) y el `setlayout` de `Super` + `T` de dwl se quitaron en la v1.0.21 y 1.0.34. `Super` + `Shift` + `T` no está en el instalador.
 
 ---
 
@@ -107,8 +108,8 @@ Lista de los atajos que **realmente configura** el instalador (v1.0.22).
 
 | Acción | Efecto |
 |---|---|
-| `Super` + **rueda del ratón** hacia arriba | Subir el volumen (+5 %) |
-| `Super` + **rueda del ratón** hacia abajo | Bajar el volumen (−5 %) |
+| `Super` + **rueda del ratón** hacia arriba | Subir el volumen (+5 %) *(pendiente de prueba)* |
+| `Super` + **rueda del ratón** hacia abajo | Bajar el volumen (−5 %) *(pendiente de prueba)* |
 
 > ℹ️ El instalador **no** configura teclas multimedia (volumen, brillo, captura de pantalla). `grim` viene instalado para hacer capturas desde la terminal.
 
@@ -133,9 +134,11 @@ Lista de los atajos que **realmente configura** el instalador (v1.0.22).
 
 | Acción | Efecto |
 |---|---|
-| `Super` + **rueda** | Subir / bajar el volumen |
+| `Super` + **clic izquierdo** (arrastrar) | Mover la ventana *(pendiente de prueba en mosaico)* |
+| `Super` + **clic derecho** (arrastrar) | Redimensionar la ventana *(pendiente de prueba en mosaico)* |
+| `Super` + **rueda** | Subir / bajar el volumen *(pendiente de prueba)* |
 
-> ℹ️ Mover (`Super` + clic izquierdo) y redimensionar (`Super` + clic derecho) vienen de dwl por defecto, pero **no los he probado con ventanas en mosaico**. Ya no hay atajo de ratón para flotante (`Super` + clic central).
+> ℹ️ Ya no hay atajo de ratón para flotante: el de `Super` + clic central se quitó junto con el de teclado.
 
 ---
 
@@ -148,7 +151,7 @@ dwl-rebuild                       # 2. recompila e instala (Fedora y Nobara)
 # 3. Super + Shift + E para salir, y vuelve a entrar
 ```
 
-> En **Fedora y Nobara** usa `dwl-rebuild`. `make install` volvería a instalar el binario real en el lugar del envoltorio de SDDM.
+> En **Fedora y Nobara** usa `dwl-rebuild`. `make install` volvería a instalar el binario real en el lugar del envoltorio `dwl`.
 
 | Archivo | Qué se cambia ahí |
 |---|---|
