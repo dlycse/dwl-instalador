@@ -1,11 +1,11 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.32 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu) 
+# install-dwl v1.0.34 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu) 
 # ============================================================
 set +e
 
-VERSION="1.0.32"
-BUILD="prueba (correcciones de revision: greetd, grupos, Arch, Void, zona horaria)"
+VERSION="1.0.34"
+BUILD="prueba (revision de dudas: atajos duplicados y muertos)"
 
 APT_LOCK="-o DPkg::Lock::Timeout=900"
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -725,9 +725,7 @@ cat > "$KEYS_FILE" <<KEYS
 	{ MODKEY,                    XKB_KEY_t,           spawn,            {.v = termcmd} },
 	{ MODKEY,                    XKB_KEY_w,           spawn,            SHCMD("/usr/local/bin/dwlb-toggle") },
 	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_w,           spawn,            SHCMD("/usr/local/bin/dwlb-flip") },
-	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_f,           togglefullscreen, {0} },
 	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_e,           quit,             {0} },
-	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_t,           setlayout,        {.v = &layouts[0]} },
 KEYS
 if grep -q '^static const Key keys\[\] = {' config.h; then
   sed -i "/^static const Key keys\[\] = {/r $KEYS_FILE" config.h
@@ -737,9 +735,9 @@ else
 fi
 rm -f "$KEYS_FILE"
 
-# 8) Layouts: solo Super+Space. Se quitan Super+M (monocle) y Super+Shift+T (mosaico),
+# 8) Layouts: solo Super+Space. Se quitan los setlayout de Super+M (monocle) y Super+T (mosaico) de dwl,
 #    y el segundo layout de dwl arranca en monocle, asi Super+Space alterna mosaico <-> monocle.
-apply_patch "quita Super+M y Super+Shift+T (solo Super+Space)" '/XKB_KEY_m,.*setlayout/d;/XKB_KEY_t,.*setlayout/d'
+apply_patch "quita Super+M y Super+T setlayout de dwl (solo Super+Space)" '/XKB_KEY_m,.*setlayout/d;/XKB_KEY_t,.*setlayout/d'
 
 # 8) Rueda del raton + Super = volumen (los ejes vienen vacios en dwl)
 apply_patch "volumen con Super+rueda" \
