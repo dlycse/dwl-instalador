@@ -1,9 +1,8 @@
 # dwl-instalador
 
-> ### VERSIÓN 1.0.32
+> ### VERSIÓN 1.0.41
 > - **Void Linux** (xbps + runit), **Arch Linux** (pacman + systemd), **Fedora 44 o superior** y **Nobara** (dnf + systemd), y **Debian** puro recomendado aunque puede funcionar en derivadas (apt + systemd).
 > - **Probado** en Void, Arch, Fedora 44 (minimal) (y Nobara 44 KDE) y Debian 13.7.
-> - **Cambios de 1.0.23 a 1.0.32 pendientes de prueba en cada distro:** volumen en Debian, greetd con sesión activa, grupos, Arch con `-Syu`, Void (xbps y wlroots), zona horaria con espacios y el error con Artix/OpenRC.
 > - **Fedora 43 y anteriores:** dwl necesita wlroots 0.20. Si los repositorios no lo traen, el instalador lo **compila desde fuente** (tarda varios minutos).
 > - **Sesión:** si ya tienes un gestor de sesión (SDDM, GDM, LightDM…), el instalador te pregunta si lo cambia por greetd + tuigreet o si lo conserva. En el segundo caso, elige **dwl** en el menú de sesiones.
 > - Se recomiendan **20 GB libres** para evitar errores de almacenamiento.
@@ -18,7 +17,7 @@
 
 | Componente | Para qué sirve |
 |---|---|
-| **dwl** | El compositor (gestor de ventanas) Wayland |
+| **dwl** | El compositor (gestor de ventanas) Wayland. Versión fijada al commit `01db8ae` (dwl main) |
 | **[dwlb](https://github.com/kolunmi/dwlb)** | La **barra** superior (tags, layout, estado) — autor: *kolunmi* |
 | **foot** | Emulador de terminal, con fondo transparente (alfa 0.75) |
 | **wmenu** | Lanzador de aplicaciones (el equivalente a dmenu) |
@@ -49,7 +48,7 @@ Además deja listo:
 - Fedora no empaqueta **JetBrainsMono Nerd Font**: el instalador la descarga de la [release oficial de Nerd Fonts](https://github.com/ryanoasis/nerd-fonts/releases) a `~/.local/share/fonts`.
 - El instalador también instala **`patch`** y **`perl-interpreter`**. Sin `patch` el parche IPC de dwl no se aplica y la barra no marca el tag activo.
 - `lf` no siempre está en los repositorios de Fedora. Si falta, el instalador avisa; instálalo a mano (`sudo dnf install lf` o desde un COPR).
-- **SDDM:** en Fedora y Nobara, SDDM lanza la sesión `dwl` a través de un envoltorio: el binario real queda como `/usr/local/bin/dwl-bin` y `/usr/local/bin/dwl` ejecuta `dwl-session`. Por eso, para recompilar dwl en Fedora usa **`dwl-rebuild`** (ver [Personalizar](#personalizar-tu-escritorio)), no `make install`.
+- **Envoltorio `dwl`:** en Fedora y Nobara el binario real queda como `/usr/local/bin/dwl-bin`, y `/usr/local/bin/dwl` ejecuta `dwl-session`. Con greetd, la sesión la lanza `dwl-session` directamente; el envoltorio sirve si lanzas `dwl` por nombre desde una consola. Para recompilar dwl en Fedora usa **`dwl-rebuild`** (ver [Personalizar](#personalizar-tu-escritorio)), no `make install`.
 
 ### Arch
 
@@ -314,7 +313,7 @@ dwl-rebuild                          # 2. recompila e instala (Fedora y Nobara)
 # 3. Super + Shift + E para salir y vuelve a entrar
 ```
 
-> En **Fedora y Nobara** usa siempre `dwl-rebuild`: `make install` volvería a instalar el binario real en el lugar del envoltorio de SDDM y la sesión dejaría de abrir.
+> En **Fedora y Nobara** usa siempre `dwl-rebuild`: `make install` volvería a instalar el binario real en el lugar del envoltorio `dwl` y la sesión dejaría de abrir.
 
 > Para dwlb, usa `dwlb-rebuild` (deja el instalador), que hace lo mismo desde `~/dwlb`.
 
