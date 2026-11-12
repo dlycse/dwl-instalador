@@ -1,8 +1,9 @@
 # dwl-instalador
 
-> ### VERSIÓN 1.0.22
+> ### VERSIÓN 1.0.32
 > - **Void Linux** (xbps + runit), **Arch Linux** (pacman + systemd), **Fedora 44 o superior** y **Nobara** (dnf + systemd), y **Debian** puro recomendado aunque puede funcionar en derivadas (apt + systemd).
 > - **Probado** en Void, Arch, Fedora 44 (minimal) (y Nobara 44 KDE) y Debian 13.7.
+> - **Cambios de 1.0.23 a 1.0.32 pendientes de prueba en cada distro:** volumen en Debian, greetd con sesión activa, grupos, Arch con `-Syu`, Void (xbps y wlroots), zona horaria con espacios y el error con Artix/OpenRC.
 > - **Fedora 43 y anteriores:** dwl necesita wlroots 0.20. Si los repositorios no lo traen, el instalador lo **compila desde fuente** (tarda varios minutos).
 > - **Sesión:** si ya tienes un gestor de sesión (SDDM, GDM, LightDM…), el instalador te pregunta si lo cambia por greetd + tuigreet o si lo conserva. En el segundo caso, elige **dwl** en el menú de sesiones.
 > - Se recomiendan **20 GB libres** para evitar errores de almacenamiento.
@@ -34,7 +35,7 @@ El instalador tiene **un solo modo**: instala todo lo de la tabla, compila dwl y
 Además deja listo:
 
 - Los **repositorios** nonfree y multilib activados en **Void** (ver abajo).
-- La **zona horaria** (`/etc/localtime`, `TIMEZONE` en Void, y `chronyd` para la hora).
+- La **zona horaria** (`/etc/localtime`, `TIMEZONE` en Void, y `chronyd` para la hora). Puedes escribir el país con espacios (`Costa Rica`, `Estados Unidos`).
 - El **teclado**, tanto en la consola (`KEYMAP`) como en dwl.
 - Atajos de teclado con **Super** como tecla principal (en dwl por defecto es Alt).
 - `~/Atajos.txt` con los atajos completos, en texto plano para leerla con `nano`.
@@ -50,16 +51,26 @@ Además deja listo:
 - `lf` no siempre está en los repositorios de Fedora. Si falta, el instalador avisa; instálalo a mano (`sudo dnf install lf` o desde un COPR).
 - **SDDM:** en Fedora y Nobara, SDDM lanza la sesión `dwl` a través de un envoltorio: el binario real queda como `/usr/local/bin/dwl-bin` y `/usr/local/bin/dwl` ejecuta `dwl-session`. Por eso, para recompilar dwl en Fedora usa **`dwl-rebuild`** (ver [Personalizar](#personalizar-tu-escritorio)), no `make install`.
 
+### Arch
+
+- El instalador hace una **actualización completa** (`pacman -Syu`) antes de instalar los paquetes. No hace instalaciones parciales.
+- No activa `[multilib]`. Para Steam, ver [Steam y drivers](#-steam-y-drivers-opcional).
+
 ### Debian
 
 - Las dependencias salen de `apt`. Si la versión no trae wlroots 0.20, el instalador lo compila desde fuente.
 - **Firefox:** se instala `firefox-esr`.
+- **Audio:** se instala **`pipewire-bin`**, que trae el servidor de PipeWire. El paquete `pipewire` solo trae las librerías. Sin `pipewire-bin` la barra no muestra el volumen (aparece `VOL 0%`). Esto está corregido desde la 1.0.23.
+
+### Artix y otras distros sin systemd
+
+Artix (OpenRC o runit) **no está soportado**. El instalador se detiene con un error claro al empezar, en vez de fallar a mitad de la instalación.
 
 ---
 
 ## Repositorios que deja activados (solo Void)
 
-En **Void**, el instalador activa estos repositorios antes de instalar los paquetes:
+En **Void**, el instalador actualiza xbps y después activa estos repositorios antes de instalar los paquetes:
 
 | Repositorio | Qué te permite instalar después |
 |---|---|
@@ -131,9 +142,9 @@ En este orden:
 |---|---|
 | **Espacio libre** | Solo pregunta si hay menos de 20 GB libres en `/`: `s` para continuar, `N` para cancelar |
 | **Teclado** | `1` Inglés (us) · `2` Español de España (es) · `3` Latinoamericano (latam) — por defecto `3` |
-| **País o zona horaria** | Escribe tu país (`Colombia`, `México`, `Argentina`, `España`, `Chile`, `Perú`…) o la zona directa (`America/Bogota`). Por defecto `America/Bogota` |
+| **País o zona horaria** | Escribe tu país (`Colombia`, `México`, `Costa Rica`, `Argentina`, `España`, `Chile`, `Perú`…) o la zona directa (`America/Bogota`). Por defecto `America/Bogota` |
 | **Kernel** *(solo Void)* | Pregunta si buscar e instalar el **kernel más reciente** de los repos. Si hay una serie nueva, se instala **junto** al actual (no lo reemplaza) y se activa al reiniciar |
-| **Gestor de sesión** *(si ya tienes uno)* | Pregunta si cambiarlo por **greetd + tuigreet**. `N` (por defecto) lo conserva y tendrás que elegir **dwl** en su menú |
+| **Gestor de sesión** *(si ya tienes uno)* | Pregunta si cambiarlo por **greetd + tuigreet**. `N` (por defecto) lo conserva y tendrás que elegir **dwl** en su menú. Si lo cambias y tienes una sesión gráfica abierta, el cambio se aplica **al reiniciar** |
 
 ---
 
@@ -338,7 +349,9 @@ pgrep -af 'swaybg|dwlb'              # confirma que estén corriendo
 | dwl no arranca / pantalla en negro | Reinicia de verdad: `sudo reboot`. Casi siempre son los grupos `_seatd`/`seat`/`video` sin aplicar |
 | No puedes moverte / se colgó | `Ctrl` + `Alt` + `F2` para ir a una consola y ahí `sudo reboot` |
 | `tuigreet` no aparece | Está en la **tty 1**. Mira el estado: Void `sudo sv status greetd` · Arch, Fedora y Debian `systemctl status greetd` |
+| Vuelve el gestor de sesión viejo tras reiniciar (lightdm, gdm, sddm) | Desactívalo: `systemctl disable <gestor>` (Arch, Fedora, Debian) o `sudo rm /var/service/<gestor>` (Void), y luego `sudo reboot` |
 | El instalador termina con `greetd NO arranco` | Revisa el log: Void `sudo tail -n 30 /var/log/greetd/current` · Arch, Fedora y Debian `journalctl -u greetd -b` |
+| El instalador se detiene con `Este instalador necesita systemd` | Tu distro no usa systemd (Artix con OpenRC o runit). No está soportada |
 | SDDM o GDM no muestran dwl | Revisa que exista `/usr/share/wayland-sessions/dwl.desktop`. Si no aparece, vuelve a ejecutar el instalador |
 | Fedora / Nobara: la sesión dwl no abre o se queda en negro | Comprueba `ls -l /usr/local/bin/dwl /usr/local/bin/dwl-bin`. `dwl` debe pesar unos 47 bytes (envoltorio) y `dwl-bin` unos 300 KB. Si `dwl-bin` es muy pequeño, vuelve a compilar con `dwl-rebuild` |
 | Arch: `error: no se ha encontrado el paquete` | Ya no debería pasar: el instalador comprueba cada paquete antes de instalarlo y solo omite los que no existen. Verás un aviso `No estan en los repos, se omiten: …` |
@@ -350,6 +363,7 @@ pgrep -af 'swaybg|dwlb'              # confirma que estén corriendo
 | Fedora: greetd o tuigreet fallan al arrancar | Revisa SELinux con `sudo ausearch -m avc -ts recent` y el log con `journalctl -u greetd -b` |
 | Falla al instalar los paquetes en **musl** o **aarch64** (Void) | Esos sistemas **no tienen** repositorio multilib: el instalador ya lo tiene en cuenta; si aun así falla, quita `void-repo-nonfree void-repo-multilib void-repo-multilib-nonfree` de la línea de `xbps-install` y vuelve a ejecutarlo |
 | `steam` no aparece en XBPS | Resincroniza (`sudo xbps-install -Sy`) y comprueba los repos con `xbps-query -Rs steam` |
+| Debian: la barra no muestra el volumen (`VOL 0%`) | Con la 1.0.23 o posterior ya se instala `pipewire-bin`. En versiones anteriores: `sudo apt install pipewire-bin wireplumber` y cierra sesión. Comprueba con `wpctl get-volume @DEFAULT_AUDIO_SINK@` |
 | El audio no va | Void `sudo sv status seatd pipewire` · Arch, Fedora y Debian `systemctl --user status pipewire wireplumber`, y reinicia la sesión |
 | La barra no marca el tag activo ni `[]=` | El parche IPC de dwl no se aplicó o no compiló (mira el aviso al instalar; en Fedora suele ser `patch` sin instalar). Sin él, la barra usa `-no-ipc` y los clics en los tags no funcionan. Usa `Super` + `1`…`9` |
 | Super+M o Super+Shift+T siguen cambiando el layout | Tu instalación es anterior a la 1.0.21. Vuelve a ejecutar el instalador y revisa `grep -n 'XKB_KEY_m' ~/dwl/config.h` (debe salir vacío) |
