@@ -5,7 +5,7 @@
 set +e
 
 VERSION="1.0.32"
-BUILD="prueba (correcciones de revision: greetd, grupos, Arch, Void, zona horaria)"
+BUILD="Estable (correcciones de revision: greetd, grupos, Arch, Void, zona horaria)"
 
 APT_LOCK="-o DPkg::Lock::Timeout=900"
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
