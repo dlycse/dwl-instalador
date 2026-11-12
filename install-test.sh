@@ -1,11 +1,128 @@
 #!/bin/sh
 # ============================================================
-# install-dwl v1.0.34 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu) 
+# install-dwl v1.0.40 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
+# REGLA DE VERSIONES: cada funcion nueva o problema resuelto sube 0.01
+# (1.0.5 -> 1.0.6 -> 1.0.7 ...). Al subir, cambia VERSION abajo y este encabezado.
+# VERSION 1.0.40: fix — Void instala paquete a paquete si el lote falla (como Arch y Debian), en vez de abortar.
+# VERSION 1.0.39: fix — Fedora/Nobara: se crea ~/.cache antes de abrir el log del runner (si no existia, la barra no arrancaba).
+# VERSION 1.0.38: fix — typo en el aviso de Ubuntu/Mint ("no lo traen").
+# VERSION 1.0.37: fix — el borrado final usa REAL_HOME (con sudo, ~ puede apuntar a /root).
+# VERSION 1.0.36: fix — parche IPC fijado a commit de dwl-patches y verificado con sha256 (antes: rama main sin checksum).
+# VERSION 1.0.35: fix — dwl fijado a commit verificado (01db8ae) en vez de clonar main sin control.
+# VERSION 1.0.34: fix — se quita la linea muerta Super+Shift+T (se insertaba en keys[] y el paso 8 la borraba); la etiqueta del paso 8 ahora nombra Super+T, que es lo que borra el sed.
+# VERSION 1.0.33: fix — se quita Super+Shift+F (duplicado de Super+F, ambos togglefullscreen).
+# VERSION 1.0.32: fix — systemd sin sistema de arranque compatible (p. ej. Artix con OpenRC) falla con error claro en todas las familias, no en silencio.
+# VERSION 1.0.31: fix — Ctrl+C ahora termina el script (antes seguia ejecutandose tras el trap).
+# VERSION 1.0.30: fix — APT_LOCK se define antes de su primer uso (antes el primer apt-get update iba sin candado).
+# VERSION 1.0.29: fix — zona horaria: 'Costa Rica', 'Republica Dominicana' y 'Estados Unidos' con espacios ahora se reconocen.
+# VERSION 1.0.28: fix — Arch: instalacion con -Syu (antes -Sy era una actualizacion parcial).
+# VERSION 1.0.27: fix — Void: se actualiza xbps antes de instalar (xbps desactualizado aborta la instalacion).
+# VERSION 1.0.26: fix — grupos: usermod ya no falla entero si un grupo (seat, _seatd, video...) no existe; se añade cada grupo por separado.
+# VERSION 1.0.25: fix — Void: se instala wlroots0.20-devel (el mismo paquete que comprueba la deteccion), no wlroots-devel.
+# VERSION 1.0.24: fix — Debian/Ubuntu/Mint: con una sesion activa, greetd ya no queda sin efecto: se desactivan lightdm/gdm/sddm (disable, sin cortar la sesion) y se habilita greetd con --force.
+# VERSION 1.0.23: fix — Debian: no salia el volumen en la barra. El servidor PipeWire (pipewire-bin)
+#   no se instalaba: el paquete 'pipewire' solo trae librerias. Sin el demonio, wpctl no devuelve
+#   volumen y la barra mostraba VOL 0%. Ahora se instala pipewire-bin en Debian/Ubuntu.
+# VERSION 1.0.22: arreglo: el dwl actual pone el segundo layout en FLOTANTE; ahora se fija en monocle
+#   (parche que cubre el codigo nuevo y el antiguo de dwl.c). Super+Space pasa a mosaico <-> monocle.
+# VERSION 1.0.21: layouts solo con Super+Space (mosaico <-> monocle). Se quitan Super+M y Super+Shift+T;
+#   el segundo layout de dwl arranca en monocle (parche de dwl.c). Super+F sigue maximizando.
+# VERSION 1.0.20: foot: la seccion de colores se elige probando foot instalado ([colors-dark] o [colors]).
+#   Arch (foot nuevo) daba "[colors]: invalid section name". Afecta a todas las distros por igual.
+# VERSION 1.0.19: Super+F alterna maximizar (togglefullscreen) y mosaico, en vez de monocle.
+# VERSION 1.0.18: mosaico siempre: se quitan los atajos de ventana flotante (Super+Shift+Espacio y
+#   Super+clic central) para que las ventanas no se superpongan. Solo cambia la compilacion de dwl.
+# VERSION 1.0.17: fix — Fedora/Nobara: foot 1.25+ avisa "[colors]: use [colors-dark]" en cada arranque;
+#   en Fedora el foot.ini usa [colors-dark]. Void/Arch/Debian siguen con [colors] (foot 1.21 no lo conoce).
+# VERSION 1.0.16: Fedora/Nobara: SDDM lanza 'dwl' por nombre; el binario real pasa a dwl-bin
+#   y 'dwl' es un envoltorio que ejecuta dwl-session. El runner escribe log en ~/.cache/dwl-runner.log.
+#   Solo afecta a Fedora/Nobara: Void, Arch y Debian siguen igual.
+# VERSION 1.0.15: fix — Nobara (ID=nobara, ID_LIKE=fedora) no era reconocido; ahora es familia fedora.
+# VERSION 1.0.14: fix — wallpaperaccess.com da 403 en algunas redes (VirtualBox). Respaldo en
+#   Wikimedia Commons (CC BY-SA 4.0), valida JPEG/PNG y anota el origen en .wallpaper-instalador.
+# VERSION 1.0.13: fix — wlroots 0.20 compilaba SIN backend DRM (dwl: "disabled at compile-time")
+#   porque Ubuntu 24.04 / Mint 22 trae libdisplay-info 0.1.1 (wlroots pide >= 0.2.0). Ahora se
+#   compila libdisplay-info 0.2.0 desde fuente si el sistema no lo cumple.
+# VERSION 1.0.12: sin tuigreet en la distro (Ubuntu 24.04 / Mint) no se configura greetd;
+#   se conserva el gestor de sesion que ya hay.
+# VERSION 1.0.11: fixes para Mint/Ubuntu: meson >= 1.4 (ensure_meson), espera al candado de apt
+#   (APT_LOCK) y solo se piden paquetes con candidato instalable (apt_disponible).
+# VERSION 1.0.8: fix — foot 1.21 (Debian 13) no conoce [colors-dark] ni alpha-mode:
+#   se usa [colors] y solo alpha. Validado con foot --check-config.
+# VERSION 1.0.7: fix — wayland necesita libxml2 (dtd_validation, por defecto activo):
+#   se anade libxml2-dev/-devel/libxml2 y libudev-dev en Debian (lo pide libdrm).
+# VERSION 1.0.6: si ya hay un gestor de sesion (lightdm, gdm, sddm...), pregunta
+#   si se cambia a greetd + tuigreet o se conserva (por defecto se conserva).
+# VERSION 1.0.5: barra con el tag activo marcado (parche IPC de dwl, corregido:
+#   focusclient() con 3 argumentos, global IPC sin duplicar y sin el evento
+#   focused_geometry que dwlb no conoce). Ver el bloque "Parche IPC" mas abajo.
+# ------------------------------------------------------------
+# CAMBIO PRINCIPAL RESPECTO A LAS REVISIONES ANTERIORES:
+#   TODO lo relacionado con el INICIO DE SESION (usuario greeter,
+#   /etc/greetd/config.toml, servicio runit/systemd de greetd,
+#   tuigreet, PAM y el arranque del servicio) se ha movido AL
+#   FINAL DEL SCRIPT, como ultimo bloque de codigo.
+#
+#   Motivo: en v1.x greetd se configuraba y se habilitaba en
+#   medio del script, antes de que existieran
+#   /usr/local/bin/dwl-session y
+#   /usr/share/wayland-sessions/dwl.desktop. runit/systemd
+#   arrancaba greetd, tuigreet lanzaba una sesion incompleta o
+#   moria, y el servicio quedaba "down" / crashlooping.
+#
+#   Ahora el orden es:
+#     1) paquetes  2) kernel  3) servicios base  4) dwl
+#     5) dwlb      6) tema + barra  7) wallpaper
+#     8) dwl-session  9) rebuilders  10) wayland-sessions
+#    11) >>> INICIO DE SESION (greetd/tuigreet) <<<  <- FINAL
+#
+# CORRECCIONES ACUMULADAS:
+#  FIX 1  greetd corre como ROOT (nunca con chpst -u greetd).
+#  FIX 2  SIN archivo 'down' y SIN 'sv stop' (v1.0 dejaba el
+#         servicio instalado pero jamas arrancado -> tty1 muerto).
+#  FIX 3  Kernel dinamico leido con xbps-query.
+#  FIX 4  seatd, dbus y turnstiled habilitados en /var/service.
+#  FIX 5  Botones de power de tuigreet solo si existe loginctl.
+#  FIX 6  (0.9.7) Ruta ABSOLUTA al binario greetd en el 'run' de
+#         runit: runit no hereda el PATH del usuario y 'exec
+#         greetd' fallaba en silencio -> servicio down permanente.
+#  FIX 7  (0.9.7) Servicio de LOG (svlogd) para greetd, para que
+#         se pueda ver por que no arranca (/var/log/greetd/current).
+#  FIX 8  (0.9.7) Espera activa a que runsvdir cree
+#         /var/service/greetd/supervise antes de 'sv start', y
+#         verificacion final de que el proceso esta vivo.
+#  FIX 9  (0.9.7) Se usa SUDO_USER/HOME real: si ejecutabas el
+#         script con sudo, $USER era root y dwl se clonaba en
+#         /root y los grupos se daban a root.
+#  FIX 10 (0.9.7) pam_turnstile solo se anade si el modulo existe
+#         y turnstiled esta habilitado (si no, rompia el login).
+#  FIX 11 (0.9.7 rev.2) ¡EL BUG QUE CONGELABA LA PANTALLA!
+#         Si ejecutas el script desde tty1, tu shell ES el proceso
+#         supervisado agetty-tty1 (agetty -> login -> tu shell, mismo
+#         PID). 'sv force-stop agetty-tty1' = SIGKILL a tu propia
+#         sesion: el script moria y tty1 quedaba muerto (sin agetty
+#         y sin greetd). Ahora se detecta el tty/sesion y, si es
+#         peligroso, NO se toca /var/service: el cambio se programa
+#         en /etc/rc.shutdown y se aplica al reiniciar.
+#  FIX 12 (0.9.7 rev.2) sudo -v al inicio + keep-alive en segundo
+#         plano (la credencial caduca durante el 'make' de dwl/dwlb)
+#         y 'timeout' en las llamadas a sv/systemctl para que nunca
+#         se quede colgado esperando una password invisible.
+#  FIX 13 (0.9.7 rev.3) Arch: wlroots se DETECTA en los repos
+#         (wlroots0.20 / 0.19 / 0.18...). El nombre fijo
+#         'wlroots0.19' desaparecio y pacman abortaba TODA la
+#         instalacion por ese unico paquete.
+#  FIX 14 (0.9.7 rev.3) Arch: la lista se filtra con 'pacman -Si',
+#         se instala en lote y, si falla, uno a uno (+ AUR con
+#         yay/paru). Ningun paquete perdido tumba la instalacion.
+#  FIX 15 (0.9.7 rev.3) dwl trae "wlroots-0.20" escrito a fuego en
+#         config.mk: se detecta el pkg-config real del sistema y se
+#         parchea, asi compila igual con 0.19, 0.20 o la que venga.
 # ============================================================
 set +e
 
-VERSION="1.0.34"
-BUILD="prueba (revision de dudas: atajos duplicados y muertos)"
+VERSION="1.0.40"
+BUILD="prueba (revision de dudas: version fijada, checksum, Void, Fedora)"
 
 APT_LOCK="-o DPkg::Lock::Timeout=900"
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
@@ -219,7 +336,7 @@ GREETER_OK=1
 if [ "$FAMILIA" = "debian" ] && ! apt_disponible tuigreet; then GREETER_OK=0; fi
 if [ "$GREETER_OK" = 0 ]; then
   USE_GREETD=0
-  warn "tuigreet no esta en los repos de tu distro (Ubuntu 24.04 y Mint lo no traen): no se configura greetd."
+  warn "tuigreet no esta en los repos de tu distro (Ubuntu 24.04 y Mint no lo traen): no se configura greetd."
   if [ -n "$DM_FOUND" ]; then
     ok "Se conserva tu gestor de sesion: $DM_FOUND. Elige dwl en su menu."
   else
@@ -377,7 +494,9 @@ if [ "$FAMILIA" = "void" ]; then
   fi
   info "Instalando paquetes base para Void Linux..."
   # shellcheck disable=SC2086
-  sudo xbps-install -Sy base-devel git libinput-devel wayland-devel wayland-protocols libxkbcommon-devel $VOID_WLR $VOID_BUILD libseat-devel seatd xorg-server-xwayland mesa-dri libdrm-devel pango-devel cairo-devel pixman-devel libgudev-devel fcft-devel tllist foot wmenu fastfetch pipewire wireplumber alsa-pipewire swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd tuigreet turnstile || err "Fallo instalando paquetes."
+  VOID_PKGS="base-devel git libinput-devel wayland-devel wayland-protocols libxkbcommon-devel $VOID_WLR $VOID_BUILD libseat-devel seatd xorg-server-xwayland mesa-dri libdrm-devel pango-devel cairo-devel pixman-devel libgudev-devel fcft-devel tllist foot wmenu fastfetch pipewire wireplumber alsa-pipewire swaybg swaylock grim slurp wl-clipboard brightnessctl curl procps-ng nano nerd-fonts lf mpv zathura zathura-pdf-poppler xdg-utils imv chrony firefox btop cowsay dbus pciutils greetd tuigreet turnstile"
+  # shellcheck disable=SC2086
+  sudo xbps-install -Sy $VOID_PKGS || for p in $VOID_PKGS; do sudo xbps-install -Sy "$p" >/dev/null 2>&1 || warn "No se pudo instalar: $p"; done
   GREETER_USER="greetd"
   SEAT_GROUP="_seatd"
 
@@ -668,6 +787,10 @@ info "Compilando dwl..."
 cd "$REAL_HOME" || err "No existe $REAL_HOME"
 [ ! -d dwl ] && sudo -u "$REAL_USER" git clone https://codeberg.org/dwl/dwl.git
 cd dwl || err "No se pudo entrar en $REAL_HOME/dwl"
+# Version fijada (1.0.35): dwl main en el commit que se verifico (anclas de config.def.h, dwl.c y config.mk).
+DWL_COMMIT="01db8aea354fe38dea5d4db82285d7dd51b99385"
+sudo -u "$REAL_USER" git cat-file -e "$DWL_COMMIT" 2>/dev/null || sudo -u "$REAL_USER" git fetch -q origin
+sudo -u "$REAL_USER" git checkout -q --detach "$DWL_COMMIT" || warn "No pude fijar dwl a $DWL_COMMIT: se usa el dwl que haya en ~/dwl."
 [ "$(stat -c %U . 2>/dev/null)" != "$REAL_USER" ] && sudo chown -R "$REAL_USER:$REAL_USER" .
 rm -f config.h
 cp config.def.h config.h
@@ -771,7 +894,9 @@ for c in patch perl awk sed curl; do
 done
 git checkout -q -- Makefile dwl.c config.def.h 2>/dev/null
 rm -f protocols/dwl-ipc-unstable-v2.xml dwl.c.rej dwl.c.orig
-if curl -fsSL https://codeberg.org/dwl/dwl-patches/raw/branch/main/patches/ipc/ipc.patch -o /tmp/dwl-ipc.patch 2>/dev/null; then
+# 1.0.36: parche IPC fijado a commit y verificado con sha256 (antes: rama main sin checksum)
+if curl -fsSL https://codeberg.org/dwl/dwl-patches/raw/commit/fd5e06a50dfba552c0d3b34eba6a2ed656726f5c/patches/ipc/ipc.patch -o /tmp/dwl-ipc.patch 2>/dev/null \
+   && echo "9d553e3956cd35960ec31d1375fc256ab7bee605d1912d491716c9830a783ca6  /tmp/dwl-ipc.patch" | sha256sum -c - >/dev/null 2>&1; then
   patch -p1 -N --no-backup-if-mismatch < /tmp/dwl-ipc.patch >/tmp/dwl-ipc.log 2>&1
   # Un bloque (prototipos dwl_ipc_*) no encaja en dwl main: se inserta a mano
   if [ -f dwl.c.rej ]; then
@@ -1140,7 +1265,10 @@ info "Creando script de sesion..."
 grep -qw hypervisor /proc/cpuinfo && VM_FLAGS="export WLR_NO_HARDWARE_CURSORS=1 WLR_RENDERER=pixman" || VM_FLAGS=""
 # Fedora: SDDM lanza el binario 'dwl' (envoltorio), y el real es dwl-bin. El runner
 # escribe su salida en ~/.cache/dwl-runner.log. Las demas distros no cambian.
+# 1.0.39: en Fedora, ~/.cache debe existir ANTES de abrir el log (el mkdir del runner llega tarde)
+DWL_PRE=""
 if [ "$FAMILIA" = "fedora" ]; then
+  DWL_PRE='mkdir -p "$HOME/.cache"'
   DWL_EXEC='dwl-bin -s "/usr/local/bin/dwl-status-runner >$HOME/.cache/dwl-runner.log 2>&1"'
 else
   DWL_EXEC="dwl -s /usr/local/bin/dwl-status-runner"
@@ -1164,6 +1292,7 @@ trap clean EXIT
 start_daemon pipewire pipewire
 start_daemon wireplumber wireplumber
 command -v pipewire-pulse >/dev/null && start_daemon pipewire-pulse pipewire-pulse
+$DWL_PRE
 $DWL_EXEC
 clean
 EOF
@@ -1548,5 +1677,5 @@ echo "          Super+Shift+e salir de sesion"
 line
 [ "${FINAL_ERROR:-0}" -eq 1 ] && err "Revisa los errores de arriba antes de reiniciar."
 ok "Instalacion v$VERSION completada. Realiza ${B}sudo reboot${R} para cargar todo sin problema."
-rm -rf ~/dwl-instalador
+rm -rf "${REAL_HOME:?}/dwl-instalador"
 exit 0
