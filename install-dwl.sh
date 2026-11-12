@@ -1,12 +1,13 @@
 #!/bin/sh
-# ===================================================================================
-# install-dwl v1.0.22 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu)
-# ===================================================================================
+# ============================================================
+# install-dwl v1.0.32 — Wayland con dwl + dwlb (Void + Arch + Fedora + Debian/Ubuntu) 
+# ============================================================
 set +e
 
-VERSION="1.0.22"
-BUILD="estable (tags en la barra + anti wlroots-fantasma + anti tty1-kill)"
+VERSION="1.0.32"
+BUILD="prueba (correcciones de revision: greetd, grupos, Arch, Void, zona horaria)"
 
+APT_LOCK="-o DPkg::Lock::Timeout=900"
 TIMEOUT_BIN="$(command -v timeout 2>/dev/null || true)"
 # sudo con red de seguridad: si algo se cuelga (p.ej. pidiendo password),
 # se mata a los 25 s en vez de esperar para siempre.
@@ -71,7 +72,8 @@ info "Usuario destino: $REAL_USER   HOME: $REAL_HOME"
 sudo -v || err "Necesitas privilegios de sudo para continuar."
 ( while :; do sudo -v; sleep 60; done ) >/dev/null 2>&1 &
 SUDO_KEEPALIVE=$!
-trap 'kill "$SUDO_KEEPALIVE" 2>/dev/null' EXIT INT TERM
+trap 'kill "$SUDO_KEEPALIVE" 2>/dev/null' EXIT
+trap 'kill "$SUDO_KEEPALIVE" 2>/dev/null; exit 130' INT TERM
 ok "Credencial sudo cacheada (se renueva sola durante la compilacion)"
 
 hdr "DETECCION DEL SISTEMA"
@@ -88,6 +90,9 @@ case "${ID:-unknown}" in
 esac
 [ "$FAMILIA" = "unknown" ] && err "Solo compatible con Void Linux, Arch Linux, Fedora y Debian/Ubuntu (y derivadas)."
 info "Distro detectada: ${ID:-unknown} (familia: $FAMILIA)"
+if [ "$FAMILIA" != "void" ] && [ ! -d /run/systemd/system ]; then
+  err "Este instalador necesita systemd (${ID:-tu distro} no lo usa: Artix con OpenRC/runit no esta soportado)."
+fi
 # ---------- wlroots: se busca en los repos de CADA distro ----------
 # dwl necesita la serie wlroots 0.20 (wlroots-0.20). En cada distro se busca
 # primero la 0.20.x mas reciente de sus repos (wlr_repo_check). Si no existe,
@@ -150,7 +155,7 @@ echo
 printf "  %s[?]%s Pais (ejemplo: Mexico, Paraguay, Bolivia, etc.) %s[vacio = America/Bogota]%s: " "$CYAN" "$R" "$GREY" "$R"; read -r TZIN
 TZIN="${TZIN:-America/Bogota}"
 resolv_tz(){
-  case "$1" in
+  case "$(printf '%s' "$1" | tr -d ' ')" in
     [Cc]olombia)                              echo "America/Bogota" ;;
     [Mm]exico|[Mm]éxico)                      echo "America/Mexico_City" ;;
     [Aa]rgentina)                             echo "America/Buenos_Aires" ;;
@@ -240,7 +245,6 @@ fi
 # Todo va a /usr/local, y PKG_CONFIG_PATH + ld.so.conf lo hacen visible en cualquier distro.
 WLR_SRC_DIR=/tmp/dwl-wlroots-src
 # apt espera hasta 15 min si otro proceso (gestor de actualizaciones) tiene el candado de dpkg
-APT_LOCK="-o DPkg::Lock::Timeout=900"
 WLR_LOG=/tmp/dwl-wlroots-build.log
 build_meson(){
   _n="$1"; _u="$2"; _t="$3"; shift 3
@@ -356,11 +360,13 @@ if [ "$FAMILIA" = "void" ]; then
   fi
 
   # --- wlroots 0.20.x: la de los repos si existe, si no se compila desde fuente ---
+  # xbps desactualizado aborta las instalaciones: primero se actualiza xbps solo
+  sudo xbps-install -Sy xbps >/dev/null 2>&1 || warn "No se pudo actualizar xbps (continuo)"
   sudo xbps-install -S >/dev/null 2>&1 || warn "No se pudo sincronizar el indice de xbps"
   if wlr_repo_check; then
     WLR_MODO=repo
     ok "wlroots $WLR_REPO_VER en los repos (dwl lo usara)"
-    VOID_WLR="wlroots-devel"
+    VOID_WLR="wlroots$WLR_SERIE-devel"
     VOID_BUILD=""
   else
     WLR_MODO=fuente
@@ -588,14 +594,14 @@ else
   arch_install(){
     # 1º intento: todo junto (rapido). Si falla: uno a uno (robusto).
     # shellcheck disable=SC2086
-    sudo pacman -Sy --needed --noconfirm $PKG_OK ||
+    sudo pacman -Syu --needed --noconfirm $PKG_OK ||
     for p in $PKG_OK; do
       sudo pacman -S --needed --noconfirm "$p" >/dev/null 2>&1 || warn "No se pudo instalar: $p"
     done
   }
   if ! arch_install; then
     warn "Reintentando con mirrorlist regenerada..."
-    sudo pacman -Sy --noconfirm reflector 2>/dev/null || true
+    sudo pacman -S --needed --noconfirm reflector 2>/dev/null || true
     sudo reflector --latest 20 --sort rate --save /etc/pacman.d/mirrorlist 2>/dev/null || true
     arch_install || true
   fi
@@ -641,9 +647,18 @@ if [ "$WLR_MODO" = fuente ]; then
 fi
 
 # ---------- Permisos de usuario ----------
+# add_groups USUARIO grupo...: solo añade los grupos que existen (usermod aborta si uno falta)
+add_groups(){
+  _u="$1"; shift; _gl=""
+  for g in "$@"; do
+    if getent group "$g" >/dev/null 2>&1; then _gl="${_gl:+$_gl,}$g"
+    else warn "El grupo '$g' no existe: se omite"; fi
+  done
+  [ -n "$_gl" ] && sudo usermod -aG "$_gl" "$_u"
+}
 echo
 info "Grupos de hardware para $REAL_USER: $SEAT_GROUP, video, input"
-sudo usermod -aG "$SEAT_GROUP",video,input "$REAL_USER"
+add_groups "$REAL_USER" "$SEAT_GROUP" video input
 warn "Los grupos se aplican al reiniciar."
 
 hdr "COMPILAR DWL"
@@ -1267,7 +1282,7 @@ fi
 # --- 2) Usuario del greeter ---
 info "Configurando usuario greeter '$GREETER_USER'..."
 id -u "$GREETER_USER" >/dev/null 2>&1 || sudo useradd -r -s /sbin/nologin -d /var/lib/greetd "$GREETER_USER"
-sudo usermod -aG tty,video,input "$GREETER_USER"
+add_groups "$GREETER_USER" tty video input
 sudo mkdir -p /var/lib/greetd /etc/greetd
 sudo chown "$GREETER_USER:$GREETER_USER" /var/lib/greetd 2>/dev/null
 sudo chmod 700 /var/lib/greetd
@@ -1449,8 +1464,17 @@ Wants=systemd-logind.service
 Conflicts=getty@tty1.service
 INI
   sudo systemctl mask getty@tty1 2>/dev/null
-  sudo systemctl enable greetd.service 2>/dev/null
   sudo systemctl set-default graphical.target 2>/dev/null
+  # Otros gestores (lightdm/gdm/sddm) ocupan el alias display-manager.service: sin
+  # desactivarlos, 'enable greetd' falla y al reiniciar vuelve el gestor viejo.
+  # 'disable' (sin --now) no corta la sesion actual.
+  for DMX in lightdm gdm gdm3 sddm xdm lxdm ly; do
+    sudo systemctl disable "$DMX.service" >/dev/null 2>&1 || true
+  done
+  if ! sudo systemctl enable --force greetd.service >/dev/null 2>&1; then
+    FINAL_ERROR=1
+    warn "No se pudo habilitar greetd.service (prueba: sudo systemctl enable --force greetd.service)"
+  fi
   if [ "${IN_SESSION:-0}" -eq 1 ]; then
     # Mismo criterio que en runit: no reiniciar el gestor de sesion
     # desde dentro de una sesion (mataria la sesion actual).
@@ -1488,6 +1512,10 @@ if [ "$USE_GREETD" = 0 ]; then
     echo " greetd no se configuro (tuigreet no esta en tu distro) y no hay gestor de sesion."
     echo " Instala lightdm o gdm (sudo apt install lightdm) para entrar a dwl."
   fi
+  echo
+elif [ "${DEFERRED:-0}" -eq 1 ] && [ "$FAMILIA" != "void" ]; then
+  echo " Modo seguro (sesion activa): greetd queda habilitado y los otros gestores desactivados."
+  echo " El cambio se aplica al reiniciar. No se ha tocado tu sesion actual."
   echo
 elif [ "${DEFERRED:-0}" -eq 1 ]; then
   echo " Modo seguro (estabas dentro de una sesion):"
