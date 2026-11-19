@@ -18,6 +18,21 @@ INSTALLER="${DWL_INSTALLER:-$HERE/install-dwl.sh}"
 info(){ printf '==> %s\n' "$*"; }
 die(){  printf 'ERROR (dwl-postsetup): %s\n' "$*" >&2; exit 1; }
 
+# Al salir (tambien con error) matamos los procesos que quedaron dentro del chroot.
+# Si no, mklive no puede desmontar /dev ("target is busy").
+kill_chroot_procs(){
+  [ -d "$ROOT" ] || return 0
+  want="$(stat -Lc '%d:%i' "$ROOT" 2>/dev/null || true)"
+  [ -n "$want" ] || return 0
+  for p in /proc/[0-9]*; do
+    pid="${p#/proc/}"
+    [ "$pid" = "$$" ] && continue
+    have="$(stat -Lc '%d:%i' "$p/root" 2>/dev/null || true)"
+    [ "$have" = "$want" ] && kill -9 "$pid" 2>/dev/null || true
+  done
+}
+trap 'kill_chroot_procs' EXIT
+
 [ -f "$ROOT/etc/os-release" ] || die "no es un rootfs valido: $ROOT"
 [ -f "$INSTALLER" ]           || die "no encuentro install-dwl.sh en $INSTALLER"
 
@@ -43,7 +58,11 @@ cp "$INSTALLER" "$ROOT/root/install-dwl.sh"
 info "Compilando dwl y dwlb dentro de la ISO (tarda varios minutos)..."
 # yes '' responde con Enter a todas las preguntas: distribucion latam, zona America/Bogota,
 # sin kernel nuevo y sin cambiar de gestor de sesion (no hay otro en la ISO).
-yes '' | chroot "$ROOT" /bin/sh -c 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; cd /root && sh ./install-dwl.sh' \
+# env -i: sudo -E deja SUDO_USER=<tu usuario> y eso haria que install-dwl.sh
+# crea grupos y busca /home/<tu usuario> dentro de la ISO (no existe). Aqui el usuario es root.
+yes '' | chroot "$ROOT" /usr/bin/env -i HOME=/root USER=root TERM=dumb \
+  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  /bin/sh -c 'cd /root && sh ./install-dwl.sh' \
   || die "install-dwl.sh fallo dentro del rootfs (mira el log de arriba)"
 rm -f "$ROOT/root/install-dwl.sh"
 
