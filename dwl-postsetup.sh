@@ -75,8 +75,12 @@ rm -f "$ROOT/root/install-dwl.sh"
 # ---------- 4) servicios: greetd en tty1, sin agetty en tty1 ----------
 RUNSV="$ROOT/etc/runit/runsvdir/default"
 mkdir -p "$RUNSV"
-rm -f "$RUNSV/agetty-tty1"
-for s in dbus seatd turnstiled greetd; do
+# La ISO live NO arranca greetd: en tty1 queda el login normal (agetty).
+# greetd se habilita solo en el sistema INSTALADO (hook en installer.sh, ver build-iso.sh).
+rm -f "$RUNSV/greetd"
+# install-dwl.sh pudo quitar agetty-tty1: lo restauramos para el live.
+[ -d "$ROOT/etc/sv/agetty-tty1" ] && ln -sfn /etc/sv/agetty-tty1 "$RUNSV/agetty-tty1"
+for s in dbus seatd turnstiled; do
   if [ -d "$ROOT/etc/sv/$s" ]; then
     ln -sfn "/etc/sv/$s" "$RUNSV/$s"
   else
