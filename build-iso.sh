@@ -45,6 +45,22 @@ if ! grep -q '_seatd,input' "$HERE/installer.sh"; then
   info "installer.sh: grupos _seatd e input anadidos al usuario."
 fi
 
+# ---------- instalador: greetd solo en el sistema INSTALADO (no en el live) ----------
+# Tras copiar el live al disco (copy_rootfs), en el disco: quitar agetty de tty1 y habilitar greetd.
+if ! grep -q 'dwl-greetd-hook' "$HERE/installer.sh"; then
+  HOOK="$(mktemp)"
+  cat > "$HOOK" <<'HOOKEOF'
+# dwl-greetd-hook: en el sistema instalado, greetd sustituye a agetty en tty1
+rm -f $TARGETDIR/etc/runit/runsvdir/default/agetty-tty1
+ln -sfn /etc/sv/greetd $TARGETDIR/etc/runit/runsvdir/default/greetd
+HOOKEOF
+  sed -i "/99-void-live/r $HOOK" "$HERE/installer.sh"
+  rm -f "$HOOK"
+  grep -q 'dwl-greetd-hook' "$HERE/installer.sh" \
+    || die "No pude anadir el hook de greetd a installer.sh (cambio en void-mklive?)."
+  info "installer.sh: greetd se habilita solo en el sistema instalado."
+fi
+
 chmod +x "$HERE/dwl-postsetup.sh" "$HERE/mkiso.sh" "$HERE/install-dwl.sh"
 
 # Paquetes que van DENTRO de la ISO (y por tanto al disco instalado).
